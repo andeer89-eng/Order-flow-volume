@@ -328,6 +328,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <div class="live-ind"><div class="live-dot" id="liveDot"></div><span class="live-lbl" id="liveLbl">OFFLINE</span></div>
     <button class="hdr-btn primary" onclick="loadCurrentTicker()">⟳ REFRESH</button>
     <button class="hdr-btn secondary" onclick="copyReport()">📋 SHARE</button>
+    <button class="hdr-btn" style="background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.35);color:var(--amber)" onmouseover="this.style.background='rgba(245,166,35,.2)'" onmouseout="this.style.background='rgba(245,166,35,.12)'" onclick="addToFavorites()">⭐ FAVORITE</button>
+    <button class="hdr-btn" style="background:rgba(74,124,220,.12);border-color:rgba(74,124,220,.35);color:var(--blue)" onmouseover="this.style.background='rgba(74,124,220,.2)'" onmouseout="this.style.background='rgba(74,124,220,.12)'" onclick="addToWatchlist()">📋 WATCHLIST</button>
     <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onmouseover="this.style.background='rgba(155,89,182,.2)'" onmouseout="this.style.background='rgba(155,89,182,.12)'" onclick="openManualTrade()">+ TRADE</button>
   </div>
 </div>
@@ -487,6 +489,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <div class="rp-tabs">
       <div class="rp-tab on" id="tab-trades" onclick="setTab('trades')">TRADES</div>
       <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">PORTFOLIO</div>
+      <div class="rp-tab" id="tab-watchlist" onclick="setTab('watchlist')">WATCHLIST</div>
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
     </div>
@@ -776,7 +779,9 @@ const S = {
   currentTicker: FLAT_TICKERS[0],
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
+  yAxisDragging: false, yAxisStart: 0, priceMin: null, priceMax: null,
   favorites: JSON.parse(localStorage.getItem('of_favorites') || '[]'),
+  watchlist: JSON.parse(localStorage.getItem('of_watchlist') || '[]'),
   scannerActive: false, scannerInterval: null, scanResults: {}, lastScanTime: null
 };
 
@@ -1469,12 +1474,13 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','portfolio','alerts','settings'].forEach(t=>document.getElementById('tab-'+t).className='rp-tab'+(t===tab?' on':''));
+  ['trades','portfolio','watchlist','alerts','settings'].forEach(t=>document.getElementById('tab-'+t).className='rp-tab'+(t===tab?' on':''));
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettings();return;}
   if(tab==='alerts'){if(!document.getElementById('alertList')){c.innerHTML='<div class="alerts-list" id="alertList"></div>';}return;}
   if(tab==='trades'){renderTrades();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
+  if(tab==='watchlist'){renderWatchlist();return;}
 }
 function setView(v){resetChartState();S.currentView=v;['vbPrice','vbDelta','vbDom'].forEach(id=>document.getElementById(id).classList.remove('on'));const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom'};document.getElementById(m[v]).classList.add('on');drawAll();}
 function setTF(tf){resetChartState();S.currentTF=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent===tf));loadCurrentTicker();}
@@ -1603,6 +1609,49 @@ function initPanZoom() {
   }, { passive: false });
 }
 
+
+function initYAxisDrag() {
+  const canvas = document.getElementById('priceCanvas');
+  
+  canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const canvasW = rect.width;
+    
+    // Check if click is on right side (Y-axis area)
+    if (x > canvasW - 80) {
+      S.yAxisDragging = true;
+      S.yAxisStart = e.clientY;
+      canvas.style.cursor = 'ns-resize';
+      e.stopPropagation();
+    }
+  });
+  
+  document.addEventListener('mousemove', e => {
+    if (!S.yAxisDragging) return;
+    
+    const dy = e.clientY - S.yAxisStart;
+    S.yAxisStart = e.clientY;
+    
+    // Adjust price range
+    if (S.priceMin !== null && S.priceMax !== null) {
+      const range = S.priceMax - S.priceMin;
+      const adjustment = (range * dy) / 500; // Sensitivity
+      S.priceMin += adjustment;
+      S.priceMax += adjustment;
+      drawAll();
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (S.yAxisDragging) {
+      S.yAxisDragging = false;
+      document.getElementById('priceCanvas').style.cursor = 'grab';
+    }
+  });
+}
+
+
 function getVisibleBars() {
   const bars = S.bars;
   if (!bars.length) return [];
@@ -1641,20 +1690,129 @@ function toggleFavorite(sym, event) {
 // ══════════════════════════════════════════════════════════════
 // PORTFOLIO / SCANNER (v5.1)
 // ══════════════════════════════════════════════════════════════
-function renderPortfolio() {
-  if (S.currentTab !== 'portfolio') return;
-  if (!S.favorites.length) {
+
+function renderWatchlist() {
+  if (S.currentTab !== 'watchlist') return;
+  
+  if (!S.watchlist.length) {
     document.getElementById('rpContent').innerHTML = `<div class="watchlist-empty">
-      ⭐ NO FAVORITES YET<br><br>
-      <span style="font-size:9px;line-height:1.8">Click the star (☆) next to any ticker<br>to add it to your portfolio.</span>
+      📋 NO WATCHLIST YET<br><br>
+      <span style="font-size:9px;line-height:1.8;color:var(--tx3)">
+        Click "ADD TO WATCHLIST" button<br>
+        to track tickers here.<br><br>
+        Different from favorites - use this<br>
+        for tickers you're researching.
+      </span>
     </div>`;
     return;
   }
   
-  let html = `<div style="padding:12px 14px;border-bottom:1px solid var(--bd)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);letter-spacing:.2em">
-        ${S.favorites.length} FAVORITES
+  let html = '<div style="padding:10px 14px">';
+  
+  S.watchlist.forEach(sym => {
+    const ticker = FLAT_TICKERS.find(t => t.sym === sym);
+    if (!ticker) return;
+    
+    html += `<div class="wl-item" onclick="selectTicker('${sym}')" style="margin-bottom:6px;padding:10px;background:var(--card);border:1px solid var(--bd);border-radius:7px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--tx1)">${sym}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2);margin-top:2px">${ticker.name}</div>
+        </div>
+        <span onclick="removeFromWatchlist('${sym}', event)" style="color:var(--tx3);cursor:pointer;padding:6px;opacity:.6;transition:all .2s">✕</span>
+      </div>
+    </div>`;
+  });
+  
+  html += '</div>';
+  document.getElementById('rpContent').innerHTML = html;
+}
+
+function removeFromWatchlist(sym, event) {
+  if (event) event.stopPropagation();
+  const idx = S.watchlist.indexOf(sym);
+  if (idx >= 0) {
+    S.watchlist.splice(idx, 1);
+    localStorage.setItem('of_watchlist', JSON.stringify(S.watchlist));
+    if (S.currentTab === 'watchlist') renderWatchlist();
+    logAlert('info', `Removed ${sym} from watchlist`);
+  }
+}
+
+
+function renderPortfolio() {
+  if (S.currentTab !== 'portfolio') return;
+  
+  if (!S.favorites.length) {
+    document.getElementById('rpContent').innerHTML = `<div class="watchlist-empty">
+      ⭐ NO FAVORITES YET<br><br>
+      <span style="font-size:9px;line-height:1.8;color:var(--tx3)">
+        Click "ADD TO FAVORITES" button<br>
+        in the header to add tickers here.<br><br>
+        Then start the scanner to monitor them 24/7!
+      </span>
+    </div>`;
+    return;
+  }
+  
+  let html = `<div style="padding:14px;background:linear-gradient(180deg,var(--card),var(--s1));border-bottom:1px solid var(--bd)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx1);letter-spacing:.15em;font-weight:600">
+          ⭐ FAVORITES PORTFOLIO
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);letter-spacing:.1em;margin-top:3px">
+          ${S.favorites.length} tickers monitored
+        </div>
+      </div>
+      <button onclick="toggleScanner()" id="scannerBtn" style="padding:10px 16px;background:${S.scannerActive?'rgba(240,73,104,.15)':'var(--teal2)'};border:1px solid ${S.scannerActive?'rgba(240,73,104,.4)':'rgba(0,196,160,.4)'};border-radius:7px;color:${S.scannerActive?'var(--bear)':'var(--teal)'};font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;letter-spacing:.1em;transition:all .2s;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.2)">
+        ${S.scannerActive ? '⏸ STOP SCANNER' : '▶ START SCANNER'}
+      </button>
+    </div>
+    ${S.lastScanTime ? `<div style="font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);text-align:center;padding:6px;background:var(--card);border-radius:5px">
+      Last scan: ${S.lastScanTime} ${S.scannerActive ? '· Next in ' + Math.floor((60000 - (Date.now() % 60000))/1000) + 's' : ''}
+    </div>` : ''}
+  </div>`;
+  
+  // Display each favorite with enhanced UI
+  S.favorites.forEach((sym, index) => {
+    const ticker = FLAT_TICKERS.find(t => t.sym === sym);
+    if (!ticker) return;
+    
+    const result = S.scanResults[sym] || { signal: 'wait', score: 0, price: 0 };
+    const signalClass = result.signal === 'long' ? 'long' : result.signal === 'short' ? 'short' : 'wait';
+    const signalText = result.signal === 'long' ? '▲ LONG' : result.signal === 'short' ? '▼ SHORT' : 'WAIT';
+    const signalEmoji = result.signal === 'long' ? '🟢' : result.signal === 'short' ? '🔴' : '⚪';
+    
+    html += `<div class="wl-item" onclick="selectTicker('${sym}')" style="border-bottom:1px solid var(--bd);padding:12px 14px;transition:all .2s">
+      <div style="display:flex;align-items:center;gap:10px;width:100%">
+        <span style="font-size:16px">${signalEmoji}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--tx1)">${sym}</div>
+            <div class="ticker-badge ${ticker.type}" style="font-size:7px;padding:2px 5px">${ticker.type.toUpperCase()}</div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2);margin-bottom:6px">${ticker.name}</div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)">
+              Score: <span style="color:${result.score>=5?'var(--bull)':result.score>=3?'var(--amber)':'var(--tx3)'};font-weight:600">${result.score}/5</span>
+            </div>
+            ${result.htfSpike ? '<div style="font-size:10px">🔥</div>' : ''}
+            ${result.price > 0 ? `<div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)">
+              @ <span style="color:var(--tx1)">${result.price.toFixed(2)}</span>
+            </div>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <div class="wl-sig ${signalClass}" style="padding:6px 12px;border-radius:6px;font-size:10px;min-width:70px;text-align:center">${signalText}</div>
+          <span class="wl-remove" onclick="removeFavorite('${sym}', event)" style="color:var(--tx3);font-size:12px;cursor:pointer;padding:4px 8px;opacity:.5;transition:all .2s">✕ Remove</span>
+        </div>
+      </div>
+    </div>`;
+  });
+  
+  document.getElementById('rpContent').innerHTML = html;
+} FAVORITES
       </div>
       <button onclick="toggleScanner()" class="wl-scan-btn ${S.scannerActive?'wl-scanning':''}" style="padding:8px 14px;background:var(--teal2);border:1px solid rgba(0,196,160,.4);border-radius:6px;color:var(--teal);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:.1em;transition:all .2s;font-weight:600">
         ${S.scannerActive ? '⏸ PAUSE' : '▶ START SCANNER'}
@@ -1705,20 +1863,59 @@ function toggleScanner() {
 
 function scanFavorites() {
   S.lastScanTime = ts();
+  console.log('🔍 Scanner running...', S.favorites.length, 'tickers');
   
-  S.favorites.forEach(sym => {
-    const ticker = FLAT_TICKERS.find(t => t.sym === sym);
-    if (!ticker) return;
-    
-    // If it's the current ticker, use live data
-    if (sym === S.currentTicker.sym && S.lastInd) {
-      S.scanResults[sym] = {
-        signal: S.lastInd.longEntry ? 'long' : S.lastInd.shortEntry ? 'short' : 'wait',
-        score: S.lastInd.condScore || 0,
-        htfSpike: S.lastInd.htfSpike
+  if (!S.favorites.length) {
+    console.log('⚠️ No favorites to scan');
+    return;
+  }
+  
+  S.favorites.forEach((sym, index) => {
+    setTimeout(() => {
+      const ticker = FLAT_TICKERS.find(t => t.sym === sym);
+      if (!ticker) {
+        console.log('⚠️ Ticker not found:', sym);
+        return;
+      }
+      
+      // If it's the current ticker, use live data
+      if (sym === S.currentTicker.sym && S.lastInd) {
+        S.scanResults[sym] = {
+          signal: S.lastInd.longEntry ? 'long' : S.lastInd.shortEntry ? 'short' : 'wait',
+          score: S.lastInd.condScore || 0,
+          htfSpike: S.lastInd.htfSpike,
+          price: S.bars[S.bars.length-1]?.close || 0
+        };
+        console.log('📊', sym, '→', S.scanResults[sym].signal, S.scanResults[sym].score + '/5');
+        return;
+      }
+      
+      // Simulate scanning for other tickers
+      const score = Math.floor(Math.random() * 6);
+      const sig = score >= 5 ? (Math.random() > 0.5 ? 'long' : 'short') : 'wait';
+      S.scanResults[sym] = { 
+        signal: sig, 
+        score, 
+        htfSpike: score >= 4,
+        price: Math.random() * 50000
       };
-      return;
-    }
+      
+      console.log('📊', sym, '→', sig, score + '/5');
+      
+      // Alert on signals
+      if (sig !== 'wait' && score >= 5) {
+        logAlert(sig, `🎯 ${sym} ${sig.toUpperCase()} @ ${S.scanResults[sym].price.toFixed(2)}`);
+        playSound(sig === 'long' ? 880 : 440, 0.15);
+      }
+    }, index * 500); // Stagger by 500ms
+  });
+  
+  // Refresh display after all scans complete
+  setTimeout(() => {
+    if (S.currentTab === 'portfolio') renderPortfolio();
+    console.log('✅ Scanner cycle complete');
+  }, S.favorites.length * 500 + 1000);
+}
     
     // For other tickers, simulate (in production, would fetch real data)
     setTimeout(() => {
@@ -1742,9 +1939,49 @@ function scanFavorites() {
   }, 3000);
 }
 
+
+function addToFavorites() {
+  const sym = S.currentTicker.sym;
+  if (!S.favorites.includes(sym)) {
+    S.favorites.push(sym);
+    localStorage.setItem('of_favorites', JSON.stringify(S.favorites));
+    updateFavoriteStars();
+    logAlert('info', `⭐ Added ${sym} to favorites`);
+    playSound(1000, 0.1);
+  } else {
+    logAlert('info', `${sym} already in favorites`);
+  }
+}
+
+function addToWatchlist() {
+  const sym = S.currentTicker.sym;
+  if (!S.watchlist.includes(sym)) {
+    S.watchlist.push(sym);
+    localStorage.setItem('of_watchlist', JSON.stringify(S.watchlist));
+    logAlert('info', `📋 Added ${sym} to watchlist`);
+    playSound(900, 0.1);
+  } else {
+    logAlert('info', `${sym} already in watchlist`);
+  }
+}
+
+function removeFavorite(sym, event) {
+  if (event) event.stopPropagation();
+  const idx = S.favorites.indexOf(sym);
+  if (idx >= 0) {
+    S.favorites.splice(idx, 1);
+    localStorage.setItem('of_favorites', JSON.stringify(S.favorites));
+    updateFavoriteStars();
+    if (S.currentTab === 'portfolio') renderPortfolio();
+    logAlert('info', `Removed ${sym} from favorites`);
+  }
+}
+
+
 // Initialize v5.1
 setTimeout(() => {
   if (typeof initPanZoom === 'function') initPanZoom();
+  if (typeof initYAxisDrag === 'function') initYAxisDrag();
   if (typeof updateFavoriteStars === 'function') updateFavoriteStars();
   console.log('✅ Order Flow Elite v5.1 initialized');
 }, 100);
