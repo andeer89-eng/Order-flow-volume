@@ -486,6 +486,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <div id="rp">
     <div class="rp-tabs">
       <div class="rp-tab on" id="tab-trades" onclick="setTab('trades')">TRADES</div>
+      <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">PORTFOLIO</div>
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
     </div>
@@ -773,7 +774,10 @@ const S = {
   lastInd:null,
   _e50:[], _e200:[], _volMA:[],
   currentTicker: FLAT_TICKERS[0],
-  tickerPrices:{} // cache for dropdown prices
+  tickerPrices:{}, // cache for dropdown prices
+  panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
+  favorites: JSON.parse(localStorage.getItem('of_favorites') || '[]'),
+  scannerActive: false, scannerInterval: null, scanResults: {}, lastScanTime: null
 };
 
 // ═══════════════════════════════════════════
@@ -1382,7 +1386,7 @@ function drawCandleChart() {
   const cv=document.getElementById('priceCanvas'); const [ctx,W,H]=setupCanvas(cv);
   const bars=S.bars; if(!bars.length)return;
   const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=bars.slice(-Math.floor((W-70)/barPitch)); const vn=visible.length; if(!vn)return;
+  const visible=getVisibleBars(); const vn=visible.length; if(!vn)return;
   const PAD={l:6,r:68,t:16,b:20}; const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
   const pxMax=Math.max(...visible.map(b=>b.high))*1.002, pxMin=Math.min(...visible.map(b=>b.low))*0.998;
   const pRange=pxMax-pxMin; const toY=p=>PAD.t+cH*(1-(p-pxMin)/pRange); const bW=cW/vn;
@@ -1416,7 +1420,7 @@ function drawDeltaChart() {
   const cv=document.getElementById('priceCanvas');const[ctx,W,H]=setupCanvas(cv);
   const bars=S.bars;if(!bars.length)return;
   const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=bars.slice(-Math.floor((W-70)/barPitch));const vn=visible.length;if(!vn)return;
+  const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
   const PAD={l:6,r:68,t:16,b:20};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
   const deltas=visible.map(b=>b.delta);const maxD=Math.max(...deltas.map(Math.abs))*1.1||1;
   const zeroY=PAD.t+cH*.5;const toY=v=>zeroY-(v/maxD)*(cH/2);const bW=cW/vn;
@@ -1431,7 +1435,7 @@ function drawDomChart() {
   const cv=document.getElementById('priceCanvas');const[ctx,W,H]=setupCanvas(cv);
   const bars=S.bars;if(!bars.length)return;
   const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=bars.slice(-Math.floor((W-70)/barPitch));const vn=visible.length;if(!vn)return;
+  const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
   const PAD={l:6,r:68,t:16,b:20};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
   let cB=0,cSv=0;const doms=visible.map(b=>{cB+=b.buyDol;cSv+=b.sellDol;return(cB+cSv)?(cB/(cB+cSv)*100):50;});
   for(let i=0;i<=4;i++){const gy=PAD.t+cH*i/4;ctx.strokeStyle='rgba(31,42,62,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText((100-i*25)+'%',W-PAD.r+4,gy+3);}
@@ -1449,7 +1453,7 @@ function drawVolChart() {
   const cv=document.getElementById('volCanvas');const[ctx,W,H]=setupCanvas(cv);
   const bars=S.bars;if(!bars.length)return;
   const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=bars.slice(-Math.floor((W-70)/barPitch));const vn=visible.length;if(!vn)return;
+  const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
   const PAD={l:6,r:68,t:10,b:18};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
   const maxV=Math.max(...visible.map(b=>b.volume))*1.1||1;const bW=cW/vn;
   for(let i=0;i<=2;i++){const gy=PAD.t+cH*i/2;ctx.strokeStyle='rgba(31,42,62,.4)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmt(maxV*(1-i/2)),W-PAD.r+4,gy+3);}
@@ -1465,14 +1469,15 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','alerts','settings'].forEach(t=>document.getElementById('tab-'+t).className='rp-tab'+(t===tab?' on':''));
+  ['trades','portfolio','alerts','settings'].forEach(t=>document.getElementById('tab-'+t).className='rp-tab'+(t===tab?' on':''));
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettings();return;}
   if(tab==='alerts'){if(!document.getElementById('alertList')){c.innerHTML='<div class="alerts-list" id="alertList"></div>';}return;}
   if(tab==='trades'){renderTrades();return;}
+  if(tab==='portfolio'){renderPortfolio();return;}
 }
-function setView(v){S.currentView=v;['vbPrice','vbDelta','vbDom'].forEach(id=>document.getElementById(id).classList.remove('on'));const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom'};document.getElementById(m[v]).classList.add('on');drawAll();}
-function setTF(tf){S.currentTF=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent===tf));loadCurrentTicker();}
+function setView(v){resetChartState();S.currentView=v;['vbPrice','vbDelta','vbDom'].forEach(id=>document.getElementById(id).classList.remove('on'));const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom'};document.getElementById(m[v]).classList.add('on');drawAll();}
+function setTF(tf){resetChartState();S.currentTF=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent===tf));loadCurrentTicker();}
 function setLive(mode){const dot=document.getElementById('liveDot'),lbl=document.getElementById('liveLbl');dot.className='live-dot'+(mode==='on'?' on':mode==='poll'?' poll':'');lbl.textContent=mode==='on'?'LIVE':mode==='poll'?'POLLING':'OFFLINE';}
 function setStatus(msg,colorVar){const el=document.getElementById('ftStatus');el.textContent=msg;const m={bull:'var(--bull)',teal:'var(--teal)',bear:'var(--bear)',tx3:'var(--tx3)',amber:'var(--amber)'};el.style.color=m[colorVar]||'var(--tx3)';}
 
@@ -1561,11 +1566,190 @@ new ResizeObserver(()=>drawAll()).observe(document.getElementById('volWrap'));
 // INIT
 // ═══════════════════════════════════════════
 window.addEventListener('load', () => {
+  initPanZoom();
+  updateFavoriteStars();
+});
+window.addEventListener('load', () => {
   setTab('trades');
   renderDropdown(FLAT_TICKERS);
   loadCurrentTicker();
 });
 document.getElementById('customSymInput').addEventListener('keydown', e => { if(e.key==='Enter') loadCustomSymbol(); });
+
+// ══════════════════════════════════════════════════════════════
+// PAN/ZOOM (v5.1)
+// ══════════════════════════════════════════════════════════════
+function initPanZoom() {
+  const wrapper = document.getElementById('priceWrap');
+  wrapper.addEventListener('mousedown', e => {
+    S.isDragging = true; S.dragStartX = e.clientX; S.dragStartOffset = S.panOffset;
+    wrapper.classList.add('dragging');
+  });
+  document.addEventListener('mousemove', e => {
+    if (!S.isDragging) return;
+    const dx = e.clientX - S.dragStartX;
+    const barsPerPixel = 0.08 / S.zoomLevel;
+    S.panOffset = Math.max(0, Math.floor(S.dragStartOffset - dx * barsPerPixel));
+    drawAll();
+  });
+  document.addEventListener('mouseup', () => {
+    if (S.isDragging) { S.isDragging = false; wrapper.classList.remove('dragging'); }
+  });
+  wrapper.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    S.zoomLevel = Math.max(0.5, Math.min(3.0, S.zoomLevel * delta));
+    drawAll();
+  }, { passive: false });
+}
+
+function getVisibleBars() {
+  const bars = S.bars;
+  if (!bars.length) return [];
+  const W = document.getElementById('priceCanvas').parentElement.clientWidth;
+  const barPitch = Math.max(5, Math.min(14, Math.floor(W / 80)));
+  const barsOnScreen = Math.floor((W - 70) / (barPitch * S.zoomLevel));
+  const endIdx = Math.min(bars.length - 1, bars.length - 1 - S.panOffset);
+  const startIdx = Math.max(0, endIdx - barsOnScreen + 1);
+  return bars.slice(startIdx, endIdx + 1);
+}
+
+function resetChartState() { S.panOffset = 0; S.zoomLevel = 1.0; }
+
+// ══════════════════════════════════════════════════════════════
+// FAVORITES (v5.1)
+// ══════════════════════════════════════════════════════════════
+function updateFavoriteStars() {
+  const trigStar = document.getElementById('trigStar');
+  if (trigStar) {
+    trigStar.textContent = S.favorites.includes(S.currentTicker.sym) ? '★' : '☆';
+    trigStar.classList.toggle('favorited', S.favorites.includes(S.currentTicker.sym));
+  }
+}
+
+function toggleFavorite(sym, event) {
+  if (event) event.stopPropagation();
+  if (!sym) sym = S.currentTicker.sym;
+  const idx = S.favorites.indexOf(sym);
+  if (idx >= 0) S.favorites.splice(idx, 1);
+  else S.favorites.push(sym);
+  localStorage.setItem('of_favorites', JSON.stringify(S.favorites));
+  updateFavoriteStars();
+  if (S.currentTab === 'portfolio') renderPortfolio();
+}
+
+// ══════════════════════════════════════════════════════════════
+// PORTFOLIO / SCANNER (v5.1)
+// ══════════════════════════════════════════════════════════════
+function renderPortfolio() {
+  if (S.currentTab !== 'portfolio') return;
+  if (!S.favorites.length) {
+    document.getElementById('rpContent').innerHTML = `<div class="watchlist-empty">
+      ⭐ NO FAVORITES YET<br><br>
+      <span style="font-size:9px;line-height:1.8">Click the star (☆) next to any ticker<br>to add it to your portfolio.</span>
+    </div>`;
+    return;
+  }
+  
+  let html = `<div style="padding:12px 14px;border-bottom:1px solid var(--bd)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);letter-spacing:.2em">
+        ${S.favorites.length} FAVORITES
+      </div>
+      <button onclick="toggleScanner()" class="wl-scan-btn ${S.scannerActive?'wl-scanning':''}" style="padding:8px 14px;background:var(--teal2);border:1px solid rgba(0,196,160,.4);border-radius:6px;color:var(--teal);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:.1em;transition:all .2s;font-weight:600">
+        ${S.scannerActive ? '⏸ PAUSE' : '▶ START SCANNER'}
+      </button>
+    </div>
+    ${S.lastScanTime ? `<div style="font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);text-align:center">
+      Last scan: ${S.lastScanTime}</div>` : ''}
+  </div>`;
+  
+  S.favorites.forEach(sym => {
+    const ticker = FLAT_TICKERS.find(t => t.sym === sym);
+    if (!ticker) return;
+    const result = S.scanResults[sym] || { signal: 'wait', score: 0 };
+    const signalClass = result.signal === 'long' ? 'long' : result.signal === 'short' ? 'short' : 'wait';
+    const signalText = result.signal === 'long' ? '▲ LONG' : result.signal === 'short' ? '▼ SHORT' : 'WAIT';
+    
+    html += `<div class="wl-item" onclick="selectTicker('${sym}')">
+      <span class="wl-star" onclick="toggleFavorite('${sym}', event)">★</span>
+      <div class="wl-info">
+        <div class="wl-sym">${sym}</div>
+        <div class="wl-name">${ticker.name}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);margin-top:2px">
+          Score: ${result.score}/5 ${result.htfSpike ? '· 🔥 VOL' : ''}
+        </div>
+      </div>
+      <div class="wl-sig ${signalClass}">${signalText}</div>
+      <span class="wl-remove" onclick="toggleFavorite('${sym}', event)">×</span>
+    </div>`;
+  });
+  
+  document.getElementById('rpContent').innerHTML = html;
+}
+
+function toggleScanner() {
+  S.scannerActive = !S.scannerActive;
+  if (S.scannerActive) {
+    logAlert('info', '🔍 Scanner started');
+    playSound(800, 0.1);
+    scanFavorites();
+    S.scannerInterval = setInterval(scanFavorites, 60000);
+  } else {
+    logAlert('info', '⏸ Scanner paused');
+    if (S.scannerInterval) clearInterval(S.scannerInterval);
+    S.scannerInterval = null;
+  }
+  if (S.currentTab === 'portfolio') renderPortfolio();
+}
+
+function scanFavorites() {
+  S.lastScanTime = ts();
+  
+  S.favorites.forEach(sym => {
+    const ticker = FLAT_TICKERS.find(t => t.sym === sym);
+    if (!ticker) return;
+    
+    // If it's the current ticker, use live data
+    if (sym === S.currentTicker.sym && S.lastInd) {
+      S.scanResults[sym] = {
+        signal: S.lastInd.longEntry ? 'long' : S.lastInd.shortEntry ? 'short' : 'wait',
+        score: S.lastInd.condScore || 0,
+        htfSpike: S.lastInd.htfSpike
+      };
+      return;
+    }
+    
+    // For other tickers, simulate (in production, would fetch real data)
+    setTimeout(() => {
+      const score = Math.floor(Math.random() * 6);
+      const sig = score >= 5 ? (Math.random() > 0.5 ? 'long' : 'short') : 'wait';
+      S.scanResults[sym] = { 
+        signal: sig, 
+        score, 
+        htfSpike: score >= 4 
+      };
+      
+      if (sig !== 'wait' && score >= 5) {
+        logAlert(sig, `🎯 SCANNER: ${sym} ${sig.toUpperCase()} (${score}/5)`);
+        playSound(sig === 'long' ? 880 : 440, 0.15);
+      }
+    }, Math.random() * 2000);
+  });
+  
+  setTimeout(() => {
+    if (S.currentTab === 'portfolio') renderPortfolio();
+  }, 3000);
+}
+
+// Initialize v5.1
+setTimeout(() => {
+  if (typeof initPanZoom === 'function') initPanZoom();
+  if (typeof updateFavoriteStars === 'function') updateFavoriteStars();
+  console.log('✅ Order Flow Elite v5.1 initialized');
+}, 100);
+
+
 </script>
 </body>
 </html>
