@@ -271,6 +271,29 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── MCDX PLUS ── */
+.mcdx-box{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:11px}
+.mcdx-hdr{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.22em;color:var(--tx3);text-transform:uppercase;margin-bottom:8px}
+.mcdx-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px}
+.mcdx-cell{background:var(--card2);border:1px solid var(--bd);border-radius:5px;padding:7px;text-align:center}
+.mcdx-cell-lbl{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);letter-spacing:.15em;margin-bottom:3px}
+.mcdx-cell-val{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600}
+.mcdx-behavior{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;text-align:center;padding:6px 8px;border-radius:5px;transition:all .4s}
+
+/* ── WATCHLIST / PORTFOLIO ── */
+.watchlist-empty{padding:40px 14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--tx3);letter-spacing:.1em;line-height:2}
+.wl-item{cursor:pointer;transition:background .15s}
+.wl-item:hover{background:rgba(0,196,160,.05)}
+.wl-sig{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.08em;border:1px solid;border-radius:5px;padding:4px 8px;text-align:center}
+.wl-sig.long{color:var(--bull);border-color:rgba(34,214,142,.4);background:var(--bull2)}
+.wl-sig.short{color:var(--bear);border-color:rgba(240,73,104,.4);background:var(--bear2)}
+.wl-sig.wait{color:var(--tx3);border-color:var(--bd);background:transparent}
+
+/* ── CONDITION TOOLTIPS ── */
+.cond-tooltip{display:none;position:absolute;left:100%;top:50%;transform:translateY(-50%);background:var(--card2);border:1px solid var(--bd2);border-radius:5px;padding:5px 9px;font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2);white-space:nowrap;z-index:100;margin-left:6px;pointer-events:none;letter-spacing:.04em}
+.cond{position:relative}
+.cond:hover .cond-tooltip{display:block}
 </style>
 </head>
 <body>
@@ -287,7 +310,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     </div>
     <div>
       <div class="brand-name">ORDER FLOW ELITE</div>
-      <div class="brand-ver">v3 · MULTI-ASSET</div>
+      <div class="brand-ver">v5.2 · MULTI-ASSET</div>
     </div>
   </div>
   <div class="hdiv"></div>
@@ -328,10 +351,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <div class="live-ind"><div class="live-dot" id="liveDot"></div><span class="live-lbl" id="liveLbl">OFFLINE</span></div>
     <button class="hdr-btn primary" onclick="loadCurrentTicker()">⟳ REFRESH</button>
     <button class="hdr-btn secondary" onclick="copyReport()">📋 SHARE</button>
-    <button class="hdr-btn" style="background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.35);color:var(--amber)" onmouseover="this.style.background='rgba(245,166,35,.2)'" onmouseout="this.style.background='rgba(245,166,35,.12)'" onclick="addToFavorites()">⭐ FAVORITE</button>
-    <button class="hdr-btn" style="background:rgba(74,124,220,.12);border-color:rgba(74,124,220,.35);color:var(--blue)" onmouseover="this.style.background='rgba(74,124,220,.2)'" onmouseout="this.style.background='rgba(74,124,220,.12)'" onclick="addToWatchlist()">📋 WATCHLIST</button>
-    <button class="hdr-btn" style="background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.35);color:var(--amber)" onclick="if(typeof addToFavorites==='function')addToFavorites()">⭐ FAV</button>
-    <button class="hdr-btn" style="background:rgba(74,124,220,.12);border-color:rgba(74,124,220,.35);color:var(--blue)" onclick="if(typeof addToWatchlist==='function')addToWatchlist()">📋 WATCH</button>
+    <button class="hdr-btn" style="background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.35);color:var(--amber)" onclick="addToFavorites()">⭐ FAV</button>
+    <button class="hdr-btn" style="background:rgba(74,124,220,.12);border-color:rgba(74,124,220,.35);color:var(--blue)" onclick="addToWatchlist()">📋 WATCH</button>
     <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onclick="openManualTrade()">+ TRADE</button>
   </div>
 </div>
@@ -492,9 +513,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="rp-tab on" id="tab-trades" onclick="setTab('trades')">TRADES</div>
       <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">PORTFOLIO</div>
       <div class="rp-tab" id="tab-watchlist" onclick="setTab('watchlist')">WATCHLIST</div>
-      <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">PORTFOLIO</div>
-      <div class="rp-tab" id="tab-watchlist" onclick="setTab('watchlist')">WATCHLIST</div>
-      <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">PORTFOLIO</div>
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
     </div>
@@ -515,6 +533,25 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 </div>
 
 <script>
+// ══════════════════════════════════════════════════════════════
+// AUDIO UTILITY
+// ══════════════════════════════════════════════════════════════
+function playSound(frequency, duration) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch(_) { /* audio not supported */ }
+}
+
 // ══════════════════════════════════════════════════════════════
 // MCDX PLUS INDICATOR (v5 Addition)
 // ══════════════════════════════════════════════════════════════
@@ -785,6 +822,7 @@ const S = {
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
   favorites: JSON.parse(localStorage.getItem('of_favorites') || '[]'),
+  watchlist: JSON.parse(localStorage.getItem('of_watchlist') || '[]'),
   scannerActive: false, scannerInterval: null, scanResults: {}, lastScanTime: null
 };
 
@@ -1477,16 +1515,13 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','portfolio','alerts','settings'].forEach(t=>document.getElementById('tab-'+t).className='rp-tab'+(t===tab?' on':''));
+  ['trades','portfolio','watchlist','alerts','settings'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettings();return;}
   if(tab==='alerts'){if(!document.getElementById('alertList')){c.innerHTML='<div class="alerts-list" id="alertList"></div>';}return;}
   if(tab==='trades'){renderTrades();return;}
-  if(tab==='portfolio'&&typeof renderPortfolio==='function'){renderPortfolio();return;}
-  if(tab==='watchlist'&&typeof renderWatchlist==='function'){renderWatchlist();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
   if(tab==='watchlist'){renderWatchlist();return;}
-  if(tab==='portfolio'){renderPortfolio();return;}
 }
 function setView(v){resetChartState();S.currentView=v;['vbPrice','vbDelta','vbDom'].forEach(id=>document.getElementById(id).classList.remove('on'));const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom'};document.getElementById(m[v]).classList.add('on');drawAll();}
 function setTF(tf){resetChartState();S.currentTF=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent===tf));loadCurrentTicker();}
@@ -1580,8 +1615,6 @@ new ResizeObserver(()=>drawAll()).observe(document.getElementById('volWrap'));
 window.addEventListener('load', () => {
   initPanZoom();
   updateFavoriteStars();
-});
-window.addEventListener('load', () => {
   setTab('trades');
   renderDropdown(FLAT_TICKERS);
   loadCurrentTicker();
@@ -1606,12 +1639,6 @@ document.getElementById('customSymInput').addEventListener('keydown', e => { if(
 
 
 
-// Initialize v5.1
-setTimeout(() => {
-  if (typeof initPanZoom === 'function') initPanZoom();
-  if (typeof updateFavoriteStars === 'function') updateFavoriteStars();
-  console.log('✅ Order Flow Elite v5.1 initialized');
-}, 100);
 
 
 
@@ -1762,11 +1789,21 @@ function renderPortfolio() {
   S.favorites.forEach(sym => {
     const ticker = FLAT_TICKERS.find(t => t.sym === sym);
     if (!ticker) return;
-    const result = S.scanResults[sym] || {signal:'wait',score:0,price:0};
+    const result = S.scanResults[sym] || {signal:'wait', score:null, price:0, live:false, chg24h:null};
     const emoji = result.signal==='long'?'🟢':result.signal==='short'?'🔴':'⚪';
     const sigClass = result.signal==='long'?'long':result.signal==='short'?'short':'wait';
-    const sigText = result.signal==='long'?'▲ LONG':result.signal==='short'?'▼ SHORT':'WAIT';
-    
+    const sigText = result.live
+      ? (result.signal==='long'?'▲ LONG':result.signal==='short'?'▼ SHORT':'WAIT')
+      : (result.chg24h===null ? '— NO DATA' : (result.signal==='long'?'▲ 24H+':result.signal==='short'?'▼ 24H−':'≈ FLAT'));
+    const scoreHtml = result.live
+      ? `Score: <span style="color:${result.score>=5?'var(--bull)':result.score>=3?'var(--amber)':'var(--tx3)'};font-weight:600">${result.score}/5</span> ${result.htfSpike?'🔥':''}`
+      : (result.chg24h!==null
+          ? `24h: <span style="color:${result.chg24h>=0?'var(--bull)':'var(--bear)'};font-weight:600">${fmtP(result.chg24h)}</span>`
+          : `<span style="color:var(--tx3)">tap to load</span>`);
+    const priceHtml = result.live && result.price>0
+      ? `<div style="font-family:'JetBrains Mono',monospace;font-size:9px">@ ${result.price.toFixed(2)}</div>`
+      : '';
+
     html += `<div onclick="selectTicker('${sym}')" style="border-bottom:1px solid var(--bd);padding:12px 14px;cursor:pointer">
       <div style="display:flex;gap:10px;width:100%">
         <span style="font-size:16px">${emoji}</span>
@@ -1777,13 +1814,12 @@ function renderPortfolio() {
           </div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2);margin-bottom:6px">${ticker.name}</div>
           <div style="display:flex;gap:12px">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)">Score: <span style="color:${result.score>=5?'var(--bull)':result.score>=3?'var(--amber)':'var(--tx3)'};font-weight:600">${result.score}/5</span></div>
-            ${result.htfSpike?'<div>🔥</div>':''}
-            ${result.price>0?`<div style="font-family:'JetBrains Mono',monospace;font-size:9px">@ ${result.price.toFixed(2)}</div>`:''}
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)">${scoreHtml}</div>
+            ${priceHtml}
           </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div class="wl-sig ${sigClass}" style="padding:6px 12px;border-radius:6px;font-size:10px;text-align:center">${sigText}</div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <div class="wl-sig ${sigClass}">${sigText}</div>
           <span onclick="removeFavorite('${sym}', event)" style="color:var(--tx3);font-size:11px;cursor:pointer;opacity:.5">✕</span>
         </div>
       </div>
@@ -1810,7 +1846,6 @@ function toggleScanner() {
 
 function scanFavorites() {
   S.lastScanTime = ts();
-  console.log('🔍 Scanner running...', S.favorites.length, 'tickers');
   if (!S.favorites.length) return;
   
   S.favorites.forEach((sym, index) => {
@@ -1823,37 +1858,32 @@ function scanFavorites() {
           signal: S.lastInd.longEntry ? 'long' : S.lastInd.shortEntry ? 'short' : 'wait',
           score: S.lastInd.condScore || 0,
           htfSpike: S.lastInd.htfSpike,
-          price: S.bars[S.bars.length-1]?.close || 0
+          price: S.bars[S.bars.length-1]?.close || 0,
+          live: true
         };
       } else {
-        const score = Math.floor(Math.random() * 6);
-        const sig = score >= 5 ? (Math.random() > 0.5 ? 'long' : 'short') : 'wait';
+        // Use 24h change from price cache as a directional indicator
+        // Real order-flow signal requires loading the full ticker — click to load
+        const cached = S.tickerPrices[sym];
+        const chg = cached ? cached.chg : null;
+        const trend = chg === null ? 'wait' : chg > 1 ? 'long' : chg < -1 ? 'short' : 'wait';
         S.scanResults[sym] = {
-          signal: sig,
-          score,
-          htfSpike: score >= 4,
-          price: Math.random() * 50000
+          signal: trend,
+          score: null,        // null = no order-flow data, just 24h direction
+          htfSpike: false,
+          price: 0,
+          live: false,
+          chg24h: chg
         };
-        if (sig !== 'wait' && score >= 5) {
-          logAlert(sig, '🎯 ' + sym + ' ' + sig.toUpperCase());
-          playSound(sig === 'long' ? 880 : 440, 0.15);
-        }
       }
-      console.log('📊', sym, '→', S.scanResults[sym].signal, S.scanResults[sym].score + '/5');
     }, index * 500);
   });
   
   setTimeout(() => {
     if (S.currentTab === 'portfolio') renderPortfolio();
-    console.log('✅ Scanner complete');
   }, S.favorites.length * 500 + 1000);
 }
 
-setTimeout(() => {
-  if (typeof initPanZoom === 'function') initPanZoom();
-  if (typeof updateFavoriteStars === 'function') updateFavoriteStars();
-  console.log('✅ Order Flow Elite v5.2 loaded');
-}, 200);
 
 </script>
 </body>
