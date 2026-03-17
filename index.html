@@ -351,6 +351,74 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 /* ── WEBSOCKET LIVE BADGE ── */
 .ws-live{display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 7px;border-radius:4px;background:rgba(34,214,142,.1);border:1px solid rgba(34,214,142,.3);color:var(--bull);letter-spacing:.06em;cursor:default}
 .ws-dot{width:5px;height:5px;border-radius:50%;background:var(--bull);animation:blink 1.2s ease infinite;flex-shrink:0}
+
+/* ── LIGHT THEME ── */
+[data-theme="light"] {
+  --bg:#F8FAFC;--s1:#FFFFFF;--s2:#F1F5F9;--card:#FFFFFF;--card2:#F8FAFC;
+  --bd:#E2E8F0;--bd2:#CBD5E1;
+  --teal:#0D9488;--teal2:rgba(13,148,136,.1);
+  --bull:#16A34A;--bull2:rgba(22,163,74,.1);
+  --bear:#DC2626;--bear2:rgba(220,38,38,.1);
+  --amber:#D97706;--blue:#2563EB;--blue2:rgba(37,99,235,.1);
+  --purple:#7C3AED;--orange:#EA580C;
+  --tx1:#0F172A;--tx2:#475569;--tx3:#94A3B8;
+}
+[data-theme="light"] body{background:var(--bg)}
+[data-theme="light"] canvas{filter:none}
+
+/* ── THEME TOGGLE BUTTON ── */
+.theme-toggle{display:flex;align-items:center;gap:5px;padding:5px 10px;background:transparent;border:1px solid var(--bd);border-radius:5px;color:var(--tx2);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:.06em;white-space:nowrap}
+.theme-toggle:hover{border-color:var(--teal);color:var(--teal)}
+
+/* ── HOVER TOOLTIP ── */
+.chart-hover-tooltip{position:absolute;background:var(--card2);border:1px solid var(--bd2);border-radius:8px;padding:9px 12px;pointer-events:none;z-index:50;min-width:152px;box-shadow:0 10px 30px rgba(0,0,0,.45);display:none}
+.ht-sep{height:1px;background:var(--bd);margin:5px 0}
+.ht-row{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:3px}
+.ht-lbl{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);letter-spacing:.16em;text-transform:uppercase}
+.ht-val{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:var(--tx1)}
+.ht-val.bull{color:var(--bull)}.ht-val.bear{color:var(--bear)}.ht-val.amber{color:var(--amber)}
+.ht-title{font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:700;color:var(--teal);letter-spacing:.12em;margin-bottom:5px}
+
+/* ── SIGNAL CONDITION DETAIL ── */
+.sig-cond-detail{margin-top:10px;text-align:left}
+.scd-header{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.2em;color:var(--tx3);text-transform:uppercase;display:flex;justify-content:space-between;margin-bottom:4px}
+.scd-conf-pct{font-weight:700}
+.scd-bar-wrap{height:5px;background:var(--bd);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.scd-bar-fill{height:100%;border-radius:3px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.scd-cond{display:flex;align-items:center;gap:6px;padding:4px 7px;border-radius:5px;margin-bottom:2px;transition:background .2s}
+.scd-cond.hit{background:rgba(34,214,142,.07)}
+.scd-cond.miss{background:rgba(240,73,104,.04)}
+.scd-cond.warn-item{background:rgba(240,73,104,.07)}
+.scd-icon{font-size:9px;flex-shrink:0;width:14px;text-align:center}
+.scd-text{font-family:'JetBrains Mono',monospace;font-size:8px;flex:1}
+.scd-cond.hit .scd-text{color:var(--bull)}
+.scd-cond.miss .scd-text{color:var(--tx3)}
+.scd-cond.warn-item .scd-text{color:var(--bear)}
+
+/* ── LATENCY BADGE ── */
+#latencyBadge{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 8px;border-radius:4px;letter-spacing:.08em;margin-left:8px;display:none}
+.latency-ok{background:rgba(34,214,142,.1);border:1px solid rgba(34,214,142,.3);color:var(--bull)}
+.latency-warn{background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);color:var(--amber)}
+.latency-bad{background:rgba(240,73,104,.1);border:1px solid rgba(240,73,104,.3);color:var(--bear)}
+
+/* ── FOCUS TOGGLE ── */
+#focusToggle{padding:4px 9px;background:transparent;border:1px solid var(--bd);border-radius:4px;color:var(--tx3);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:.05em}
+#focusToggle:hover{border-color:var(--amber);color:var(--amber)}
+#focusToggle.on{background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.4);color:var(--amber)}
+
+/* ── FOOTPRINT / ORDER FLOW VIEW NOTE ── */
+.fp-view-note{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);padding:2px 8px;letter-spacing:.08em;margin-left:auto}
+.fp-legend{display:inline-flex;align-items:center;gap:8px;padding:2px 6px;background:var(--card2);border:1px solid var(--bd);border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.06em}
+.fp-buy{color:var(--bull)}.fp-sell{color:var(--bear)}.fp-imb{color:var(--amber)}
+
+/* ── STRATEGY ENGINE PANEL ── */
+.strategy-card{background:var(--card);border:1px solid var(--bd);border-radius:7px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:border-color .2s}
+.strategy-card:hover{border-color:var(--teal)}
+.strategy-card.active{border-color:rgba(0,196,160,.4);background:rgba(0,196,160,.04)}
+.strat-check{font-size:13px;flex-shrink:0}
+.strat-info{flex:1}
+.strat-name{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:var(--tx1);margin-bottom:2px}
+.strat-desc{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);letter-spacing:.03em}
 </style>
 </head>
 <body>
@@ -412,6 +480,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <button class="hdr-btn" style="background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.35);color:var(--amber)" onclick="addToFavorites()">⭐ FAV</button>
     <button class="hdr-btn" style="background:rgba(74,124,220,.12);border-color:rgba(74,124,220,.35);color:var(--blue)" onclick="addToWatchlist()">📋 WATCH</button>
     <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onclick="openManualTrade()">+ TRADE</button>
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">☀ DAY</button>
   </div>
 </div>
 
@@ -444,6 +513,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           <div class="score-lbl"><span>CONDITIONS</span><span id="scoreNum">0/5</span></div>
           <div class="score-track"><div class="score-fill" id="scoreFill" style="width:0%;background:var(--tx3)"></div></div>
         </div>
+        <!-- Condition detail panel -->
+        <div class="sig-cond-detail" id="sigCondDetail"></div>
         <!-- AI Analysis panel -->
         <div class="ai-box" id="aiBox" style="display:none">
           <div class="ai-label"><span class="ai-dot"></span>AI ANALYSIS</div>
@@ -571,8 +642,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <div class="chart-tb">
       <button class="view-btn on" id="vbPrice" onclick="setView('price')">CANDLES</button>
       <button class="view-btn" id="vbDelta" onclick="setView('delta')">DELTA</button>
+      <button class="view-btn" id="vbFlow" onclick="setView('flow')">ORDER FLOW</button>
       <button class="view-btn" id="vbDom" onclick="setView('dom')">DOMINANCE</button>
       <div class="chart-sep"></div>
+      <button id="focusToggle" onclick="toggleFocusMode()">FOCUS</button>
+      <div class="fp-legend" id="fpLegend" style="display:none"><span class="fp-buy">■ BUY</span><span class="fp-sell">■ SELL</span><span class="fp-imb">■ IMBALANCE</span></div>
       <div class="chart-info">
         <div class="ci">O:<span id="ciO">—</span></div>
         <div class="ci">H:<span id="ciH">—</span></div>
@@ -614,6 +688,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <div class="ft-last-upd" id="ftLastUpd"></div>
   <div style="margin-left:12px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)" id="pollTimer">NEXT: —</div>
   <div id="wsLiveBadge" style="display:none;margin-left:10px" class="ws-live"><span class="ws-dot"></span>WS LIVE</div>
+  <span id="latencyBadge"></span>
 </div>
 
 <script>
@@ -940,6 +1015,8 @@ const S = {
   currentTicker: FLAT_TICKERS[0],
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
+  focusMode: false,
+  _lastTickTime: 0, _wsRetryDelay: 2000,
   favorites: JSON.parse(localStorage.getItem('of_favorites') || '[]'),
   watchlist: JSON.parse(localStorage.getItem('of_watchlist') || '[]'),
   scannerActive: false, scannerInterval: null, scanResults: {}, lastScanTime: null,
@@ -1263,28 +1340,32 @@ async function fetchYahoo(sym, signal) {
 // WEBSOCKET — real-time kline streaming for crypto tickers
 // Replaces 10s polling with sub-second push updates from Binance.
 // ══════════════════════════════════════════════════════════════
-function startWebSocket(binanceSym) {
+function startWebSocket(binanceSym, retryDelay) {
   stopWebSocket();
+  if (retryDelay === undefined) retryDelay = 2000;
   const tfMap = {'1m':'1m','5m':'5m','15m':'15m','1h':'1h','4h':'4h','1d':'1d'};
   const interval = tfMap[S.currentTF] || '5m';
   const url = `wss://stream.binance.com:9443/ws/${binanceSym.toLowerCase()}@kline_${interval}`;
   let ws;
   try { ws = new WebSocket(url); } catch(e) { return; }
-  ws.onopen  = () => {
+  ws.onopen = () => {
     S.wsConn = ws;
+    S._wsRetryDelay = 2000; // reset backoff on success
     document.getElementById('wsLiveBadge').style.display = 'inline-flex';
-    // Stop the REST poll timer — WS is now delivering real-time data
     if (S.pollTimer)     { clearInterval(S.pollTimer);     S.pollTimer = null; }
     if (S._pollCountdown){ clearInterval(S._pollCountdown); S._pollCountdown = null; }
     const pt = document.getElementById('pollTimer');
     if (pt) pt.textContent = 'WS LIVE';
     setLive('on');
+    updateLatencyBadge(0);
     logAlert('info', `⚡ WebSocket connected: ${binanceSym}`);
   };
   ws.onmessage = (ev) => {
     try {
       const k = JSON.parse(ev.data).k;
       if (!k) return;
+      S._lastTickTime = Date.now();
+      updateLatencyBadge(0);
       const vol = +k.v, takerBuy = +k.Q;
       const bar = {
         time: +k.t, open: +k.o, high: +k.h, low: +k.l, close: +k.c,
@@ -1306,15 +1387,19 @@ function startWebSocket(binanceSym) {
     } catch(_) {}
   };
   ws.onclose = (ev) => {
-    if (ws !== S.wsConn) return; // already replaced
+    if (ws !== S.wsConn) return;
     document.getElementById('wsLiveBadge').style.display = 'none';
     setLive('poll');
-    // Auto-reconnect after 5s (unless user switched ticker)
-    if (!ev.wasClean) setTimeout(() => {
-      if (S.currentTicker.type === 'crypto' && S.currentTicker.binance === binanceSym) {
-        startWebSocket(binanceSym);
-      }
-    }, 5000);
+    if (!ev.wasClean && S.currentTicker.type === 'crypto' && S.currentTicker.binance === binanceSym) {
+      // Exponential backoff: 2s → 4s → 8s → 16s → 32s max
+      const delay = Math.min(retryDelay, 32000);
+      logAlert('info', `WS reconnecting in ${(delay/1000).toFixed(0)}s…`);
+      setTimeout(() => {
+        if (S.currentTicker.type === 'crypto' && S.currentTicker.binance === binanceSym) {
+          startWebSocket(binanceSym, delay * 2);
+        }
+      }, delay);
+    }
   };
   ws.onerror = () => ws.close();
 }
@@ -1650,8 +1735,13 @@ function runIndicators() {
     bullDiv ? `Pivot low detected + buy vol: ${fmt(cur.buyVol)}` : 'No bull divergence';
   document.getElementById('c3tip').textContent = 
     hiddenAccum ? `Buy: ${fmt(cur.buyVol)} > Sell: ${fmt(cur.sellVol)}` : 'No hidden accumulation';
-  document.getElementById('c4tip').textContent = 
+  document.getElementById('c4tip').textContent =
     !bullExhaust ? 'No bull exhaustion detected' : `Bull exhaust: Delta ${fmt(cur.delta)} but price down`;
+
+  // Run strategy engine (defined later in file; guard for safety)
+  if (typeof strategyEngine !== 'undefined') {
+    S._stratSignals = strategyEngine.evaluate(S.bars, S.lastInd);
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1660,9 +1750,28 @@ function runIndicators() {
 function updateLeftPanel(ind, cur) {
   const box=document.getElementById('sigBox'), val=document.getElementById('sigVal'), note=document.getElementById('sigNote');
   box.className='sig-box'; val.className='sig-val';
-  if(ind.longEntry){ box.classList.add('bull');val.classList.add('bull');val.textContent='LONG';note.textContent='ALL 5 CONDITIONS MET';logAlert('long',`🟢 LONG @ ${fmtPx(cur.close,S.currentTicker)}`); }
-  else if(ind.shortEntry){ box.classList.add('bear');val.classList.add('bear');val.textContent='SHORT';note.textContent='ALL 5 CONDITIONS MET';logAlert('short',`🔴 SHORT @ ${fmtPx(cur.close,S.currentTicker)}`); }
-  else { box.classList.add('wait');val.classList.add('wait');val.textContent=ind.longExit?'EXIT ↑':ind.shortExit?'EXIT ↓':'WAIT'; note.textContent=`${ind.condScore}/5 CONDITIONS MET`; }
+  if(ind.longEntry){ box.classList.add('bull');val.classList.add('bull');val.textContent='LONG';note.textContent='ALL CONDITIONS MET';logAlert('long',`🟢 LONG @ ${fmtPx(cur.close,S.currentTicker)}`); }
+  else if(ind.shortEntry){ box.classList.add('bear');val.classList.add('bear');val.textContent='SHORT';note.textContent='ALL CONDITIONS MET';logAlert('short',`🔴 SHORT @ ${fmtPx(cur.close,S.currentTicker)}`); }
+  else { box.classList.add('wait');val.classList.add('wait');val.textContent=ind.longExit?'EXIT ↑':ind.shortExit?'EXIT ↓':'WAIT'; note.textContent=ind.longExit||ind.shortExit?'EXIT SIGNAL DETECTED':`${ind.condScore}/5 CONDITIONS MET`; }
+  // ── Condition Detail Panel ──────────────────────────────────
+  const condItems=[
+    {label:'Bull Trend (EMA50>200)',hit:ind.bullTrend,warn:!ind.bullTrend},
+    {label:'HTF Volume Spike',hit:ind.htfSpike,warn:false},
+    {label:'Divergence / Accumulation',hit:ind.bullDiv||ind.hiddenAccum,warn:false},
+    {label:'No Bull Exhaustion',hit:!ind.bullExhaust,warn:ind.bullExhaust},
+    {label:'Volume Above Average',hit:cur.volume>ind.volMAn,warn:false}
+  ];
+  const confidence=(ind.condScore/5*100).toFixed(0);
+  const confColor=ind.condScore>=4?'var(--bull)':ind.condScore>=2?'var(--amber)':'var(--bear)';
+  const detailEl=document.getElementById('sigCondDetail');
+  if(detailEl){
+    detailEl.innerHTML=`<div class="scd-header"><span>CONFIDENCE</span><span class="scd-conf-pct" style="color:${confColor}">${confidence}%</span></div>
+      <div class="scd-bar-wrap"><div class="scd-bar-fill" style="width:${confidence}%;background:${confColor}"></div></div>
+      ${condItems.map(c=>`<div class="scd-cond ${c.hit?'hit':c.warn?'warn-item':'miss'}">
+        <span class="scd-icon">${c.hit?'✓':c.warn?'⚠':'✗'}</span>
+        <span class="scd-text">${c.label}</span>
+      </div>`).join('')}`;
+  }
   const fillPct=(ind.condScore/5*100);
   document.getElementById('scoreNum').textContent=ind.condScore+'/5';
   const sf=document.getElementById('scoreFill'); sf.style.width=fillPct+'%';
@@ -1867,7 +1976,13 @@ function scheduleRedraw() {
     requestAnimationFrame(() => { _rafPending = false; drawAll(); });
   }
 }
-function drawAll(){ if(S.currentView==='price')drawCandleChart(); else if(S.currentView==='delta')drawDeltaChart(); else drawDomChart(); drawVolChart(); }
+function drawAll(){
+  if(S.currentView==='price') drawCandleChart();
+  else if(S.currentView==='delta') drawDeltaChart();
+  else if(S.currentView==='flow') drawFlowChart();
+  else drawDomChart();
+  drawVolChart();
+}
 
 function drawCandleChart() {
   const cv=document.getElementById('priceCanvas'); const [ctx,W,H]=setupCanvas(cv);
@@ -1883,17 +1998,29 @@ function drawCandleChart() {
   if(S._e50&&S._e50.length>=bars.length){[{d:S._e50.slice(-vn),c:'rgba(245,166,35,.7)',lw:1.2},{d:(S._e200||[]).slice(-vn),c:'rgba(74,124,220,.7)',lw:1.5}].forEach(({d,c,lw})=>{if(!d.length)return;ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=lw;d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();});}
   // candles
   visible.forEach((bar,i)=>{
+    // Focus engine: fade distant bars when focus mode is on
+    if(S.focusMode){const dist=Math.abs(i-(vn-1));ctx.globalAlpha=Math.max(0.15,1-dist*0.045);}
     const x=PAD.l+(i+.5)*bW, bw2=Math.max(1,bW*.4), bull=bar.close>=bar.open;
     const bodyTop=toY(Math.max(bar.open,bar.close)), bodyBot=toY(Math.min(bar.open,bar.close)), bodyH=Math.max(1,bodyBot-bodyTop);
     ctx.strokeStyle=bull?'rgba(34,214,142,.8)':'rgba(240,73,104,.8)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(x,toY(bar.high));ctx.lineTo(x,toY(bar.low));ctx.stroke();
     ctx.fillStyle=bull?'rgba(34,214,142,.8)':'rgba(240,73,104,.8)';
     ctx.fillRect(x-bw2,bodyTop,bw2*2,bodyH);
-    // signals
+    // Zoom-adaptive delta labels (only visible at high zoom + wide bars)
+    if(S.zoomLevel>1.8&&bW>12&&bodyH>10){
+      ctx.fillStyle='rgba(255,255,255,.55)';
+      ctx.font="6px 'JetBrains Mono'";
+      ctx.textAlign='center';
+      ctx.fillText((bar.delta>=0?'+':'')+fmt(bar.delta),x,(bodyTop+bodyBot)/2+2);
+    }
+    // signals — always full opacity regardless of focus mode
+    const prevAlpha=ctx.globalAlpha;ctx.globalAlpha=1;
     if(bar.longEntry){const ay=toY(bar.low)+12;ctx.fillStyle='#22d68e';ctx.shadowBlur=10;ctx.shadowColor='#22d68e';ctx.beginPath();ctx.moveTo(x,ay-8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
     if(bar.shortEntry){const ay=toY(bar.high)-12;ctx.fillStyle='#f04968';ctx.shadowBlur=10;ctx.shadowColor='#f04968';ctx.beginPath();ctx.moveTo(x,ay+8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
     if(bar.longExit||bar.shortExit){const ay=bar.longExit?toY(bar.high)-6:toY(bar.low)+6;ctx.fillStyle='#f5a623';ctx.shadowBlur=6;ctx.shadowColor='#f5a623';ctx.beginPath();ctx.arc(x,ay,3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;}
+    ctx.globalAlpha=prevAlpha;
   });
+  ctx.globalAlpha=1;
   // Alert price lines
   drawAlertLines(ctx, toY, PAD, W, H);
   // Price line
@@ -1902,6 +2029,121 @@ function drawCandleChart() {
   ctx.beginPath();ctx.moveTo(PAD.l,cpY);ctx.lineTo(W-PAD.r,cpY);ctx.stroke();ctx.setLineDash([]);
   ctx.fillStyle=last.close>=last.open?'var(--bull)':'var(--bear)';
   ctx.fillRect(W-PAD.r,cpY-8,64,16);ctx.fillStyle='#fff';ctx.font="bold 9px 'JetBrains Mono'";ctx.textAlign='center';
+  ctx.fillText(fmtPx(last.close,S.currentTicker),W-PAD.r+32,cpY+3);
+}
+
+// ══════════════════════════════════════════════════════════════
+// ORDER FLOW CHART — footprint-style imbalance visualization
+// Shows faded candles with delta-colored cells and bid/ask split
+// bars. Imbalance >3:1 ratio gets an amber marker.
+// ══════════════════════════════════════════════════════════════
+function drawFlowChart() {
+  const cv=document.getElementById('priceCanvas');
+  const [ctx,W,H]=setupCanvas(cv);
+  const bars=S.bars; if(!bars.length)return;
+  const visible=getVisibleBars(); const vn=visible.length; if(!vn)return;
+  const PAD={l:6,r:68,t:16,b:20};
+  const cW=W-PAD.l-PAD.r, cH=H-PAD.t-PAD.b;
+  const pxMax=Math.max(...visible.map(b=>b.high))*1.002;
+  const pxMin=Math.min(...visible.map(b=>b.low))*0.998;
+  const pRange=pxMax-pxMin;
+  const toY=p=>PAD.t+cH*(1-(p-pxMin)/pRange);
+  const bW=cW/vn;
+
+  // grid
+  for(let i=0;i<=5;i++){
+    const gy=PAD.t+cH*i/5;
+    ctx.strokeStyle='rgba(31,42,62,.45)';ctx.lineWidth=.5;
+    ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();
+    ctx.fillStyle='rgba(107,132,168,.5)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';
+    ctx.fillText(fmtPx(pxMax-pRange*i/5,S.currentTicker),W-PAD.r+4,gy+3);
+  }
+
+  // EMA lines (subtle)
+  if(S._e50&&S._e50.length>=bars.length){
+    [{d:S._e50.slice(-vn),c:'rgba(245,166,35,.35)',lw:1},{d:(S._e200||[]).slice(-vn),c:'rgba(74,124,220,.35)',lw:1}].forEach(({d,c,lw})=>{
+      if(!d.length)return;ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=lw;
+      d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();
+    });
+  }
+
+  const maxDelta=Math.max(...visible.map(b=>Math.abs(b.delta)),1);
+
+  visible.forEach((bar,i)=>{
+    const x=PAD.l+(i+.5)*bW;
+    const bw2=Math.max(1,bW*.42);
+    const bull=bar.close>=bar.open;
+    const bodyTop=toY(Math.max(bar.open,bar.close));
+    const bodyBot=toY(Math.min(bar.open,bar.close));
+    const bodyH=Math.max(2,bodyBot-bodyTop);
+
+    // Faded wick
+    ctx.strokeStyle=bull?'rgba(34,214,142,.2)':'rgba(240,73,104,.2)';
+    ctx.lineWidth=.8;
+    ctx.beginPath();ctx.moveTo(x,toY(bar.high));ctx.lineTo(x,toY(bar.low));ctx.stroke();
+
+    // Faded candle outline
+    ctx.strokeStyle=bull?'rgba(34,214,142,.18)':'rgba(240,73,104,.18)';
+    ctx.lineWidth=.6;
+    ctx.strokeRect(x-bw2,bodyTop,bw2*2,bodyH);
+
+    // Delta intensity cell
+    const di=Math.abs(bar.delta)/maxDelta;
+    const buyRatio=bar.buyVol/(bar.buyVol+bar.sellVol+0.001);
+    const isImbalance=(bar.buyVol>0&&bar.sellVol>0)&&(bar.buyVol/bar.sellVol>3||bar.sellVol/bar.buyVol>3);
+
+    let r,g,b;
+    if(isImbalance){r=245;g=166;b=35;}
+    else if(bar.delta>=0){r=34;g=214;b=142;}
+    else{r=240;g=73;b=104;}
+    ctx.fillStyle=`rgba(${r},${g},${b},${0.18+di*0.52})`;
+    ctx.fillRect(x-bw2,bodyTop,bw2*2,bodyH);
+
+    // Buy/sell split bar at the bottom of the body
+    const splitH=Math.max(3,bw2*0.6);
+    const splitY=bodyBot-splitH;
+    if(bw2*2>3){
+      ctx.fillStyle='rgba(34,214,142,.85)';
+      ctx.fillRect(x-bw2,splitY,(bw2*2)*buyRatio,splitH);
+      ctx.fillStyle='rgba(240,73,104,.85)';
+      ctx.fillRect(x-bw2+(bw2*2)*buyRatio,splitY,(bw2*2)*(1-buyRatio),splitH);
+    }
+
+    // Imbalance glow marker
+    if(isImbalance){
+      const markerY=bar.delta>0?toY(bar.high)-6:toY(bar.low)+6;
+      ctx.fillStyle='rgba(245,166,35,.95)';
+      ctx.shadowBlur=8;ctx.shadowColor='rgba(245,166,35,.7)';
+      ctx.beginPath();ctx.arc(x,markerY,2.5,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
+    }
+
+    // Zoom-adaptive footprint labels (ratio text at high zoom)
+    if(S.zoomLevel>2.0&&bW>14&&bodyH>12){
+      const ratioTxt=bar.buyVol>bar.sellVol
+        ? `${(bar.buyVol/bar.sellVol).toFixed(1)}×B`
+        : `${(bar.sellVol/bar.buyVol).toFixed(1)}×S`;
+      ctx.fillStyle='rgba(255,255,255,.5)';
+      ctx.font="6px 'JetBrains Mono'";ctx.textAlign='center';
+      ctx.fillText(ratioTxt,x,(bodyTop+bodyBot)/2+2);
+    }
+
+    // Signal markers
+    if(bar.longEntry){const ay=toY(bar.low)+12;ctx.fillStyle='#22d68e';ctx.shadowBlur=10;ctx.shadowColor='#22d68e';ctx.beginPath();ctx.moveTo(x,ay-8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
+    if(bar.shortEntry){const ay=toY(bar.high)-12;ctx.fillStyle='#f04968';ctx.shadowBlur=10;ctx.shadowColor='#f04968';ctx.beginPath();ctx.moveTo(x,ay+8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
+  });
+
+  // Alert lines
+  drawAlertLines(ctx,toY,PAD,W,H);
+
+  // Current price label
+  const last=visible[vn-1], cpY=toY(last.close);
+  ctx.strokeStyle=last.close>=last.open?'rgba(34,214,142,.4)':'rgba(240,73,104,.4)';
+  ctx.lineWidth=1;ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(PAD.l,cpY);ctx.lineTo(W-PAD.r,cpY);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=last.close>=last.open?'var(--bull)':'var(--bear)';
+  ctx.fillRect(W-PAD.r,cpY-8,64,16);
+  ctx.fillStyle='#fff';ctx.font="bold 9px 'JetBrains Mono'";ctx.textAlign='center';
   ctx.fillText(fmtPx(last.close,S.currentTicker),W-PAD.r+32,cpY+3);
 }
 
@@ -1944,7 +2186,10 @@ function drawVolChart() {
   const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
   const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
   const PAD={l:6,r:68,t:10,b:18};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
-  const maxV=Math.max(...visible.map(b=>b.volume))*1.1||1;const bW=cW/vn;
+  // Normalize: cap at 95th percentile to prevent spike distortion
+  const sortedVols=visible.map(b=>b.volume).slice().sort((a,b)=>a-b);
+  const p95=sortedVols[Math.floor(sortedVols.length*0.95)]||sortedVols[sortedVols.length-1]||1;
+  const maxV=Math.max(p95*1.15,1);const bW=cW/vn;
   for(let i=0;i<=2;i++){const gy=PAD.t+cH*i/2;ctx.strokeStyle='rgba(31,42,62,.4)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmt(maxV*(1-i/2)),W-PAD.r+4,gy+3);}
   visible.forEach((bar,i)=>{const x=PAD.l+i*bW,bw=Math.max(1,bW-1),baseY=PAD.t+cH;
     const buyH=(bar.buyVol/maxV)*cH, sellH=(bar.sellVol/maxV)*cH;
@@ -1960,13 +2205,22 @@ function setTab(tab) {
   S.currentTab=tab;
   ['trades','backtest','portfolio','alerts','settings'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
   const c=document.getElementById('rpContent');
-  if(tab==='settings'){renderSettings();return;}
+  if(tab==='settings'){renderSettingsWithStrategies();return;}
   if(tab==='alerts'){renderAlerts();return;}
   if(tab==='trades'){renderTrades();return;}
   if(tab==='backtest'){renderBacktest();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
 }
-function setView(v){resetChartState();S.currentView=v;['vbPrice','vbDelta','vbDom'].forEach(id=>document.getElementById(id).classList.remove('on'));const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom'};document.getElementById(m[v]).classList.add('on');scheduleRedraw();}
+function setView(v){
+  resetChartState();S.currentView=v;
+  ['vbPrice','vbDelta','vbDom','vbFlow'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('on');});
+  const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom',flow:'vbFlow'};
+  const el=document.getElementById(m[v]);if(el)el.classList.add('on');
+  // Show footprint legend only in flow mode
+  const fpLegend=document.getElementById('fpLegend');
+  if(fpLegend)fpLegend.style.display=v==='flow'?'inline-flex':'none';
+  scheduleRedraw();
+}
 function setTF(tf){resetChartState();S.currentTF=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent.toLowerCase()===tf.toLowerCase()));loadCurrentTicker();}
 function setLive(mode){const dot=document.getElementById('liveDot'),lbl=document.getElementById('liveLbl');dot.className='live-dot'+(mode==='on'?' on':mode==='poll'?' poll':'');lbl.textContent=mode==='on'?'LIVE':mode==='poll'?'POLLING':'OFFLINE';}
 function setStatus(msg,colorVar){const el=document.getElementById('ftStatus');el.textContent=msg;const m={bull:'var(--bull)',teal:'var(--teal)',bear:'var(--bear)',tx3:'var(--tx3)',amber:'var(--amber)'};el.style.color=m[colorVar]||'var(--tx3)';}
@@ -2702,6 +2956,245 @@ function scanFavorites() {
   }, S.favorites.length * 500 + 1000);
 }
 
+// ══════════════════════════════════════════════════════════════
+// THEME SYSTEM
+// ══════════════════════════════════════════════════════════════
+function toggleTheme() {
+  const isLight = document.documentElement.dataset.theme === 'light';
+  document.documentElement.dataset.theme = isLight ? '' : 'light';
+  localStorage.setItem('of_theme', isLight ? 'dark' : 'light');
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = isLight ? '☀ DAY' : '🌙 NIGHT';
+  scheduleRedraw();
+}
+
+(function initTheme() {
+  const saved = localStorage.getItem('of_theme');
+  if (saved === 'light') {
+    document.documentElement.dataset.theme = 'light';
+    // btn not yet in DOM at this point — handled in window.load
+  }
+})();
+
+// ══════════════════════════════════════════════════════════════
+// FOCUS MODE TOGGLE
+// ══════════════════════════════════════════════════════════════
+function toggleFocusMode() {
+  S.focusMode = !S.focusMode;
+  const btn = document.getElementById('focusToggle');
+  if (btn) {
+    btn.textContent = S.focusMode ? '⚡ FOCUS' : 'FOCUS';
+    btn.className = S.focusMode ? 'on' : '';
+    btn.id = 'focusToggle'; // preserve id
+  }
+  scheduleRedraw();
+}
+
+// ══════════════════════════════════════════════════════════════
+// LATENCY TRACKER
+// ══════════════════════════════════════════════════════════════
+function updateLatencyBadge(ms) {
+  const el = document.getElementById('latencyBadge');
+  if (!el) return;
+  if (ms === 0) {
+    el.className = 'latency-ok'; el.textContent = 'LIVE'; el.style.display = 'inline-block';
+  } else if (ms < 3000) {
+    el.className = 'latency-ok'; el.textContent = ms + 'ms'; el.style.display = 'inline-block';
+  } else if (ms < 8000) {
+    el.className = 'latency-warn'; el.textContent = 'SLOW'; el.style.display = 'inline-block';
+  } else {
+    el.className = 'latency-bad'; el.textContent = 'DELAYED'; el.style.display = 'inline-block';
+  }
+}
+
+// Periodic latency check when WS is active
+setInterval(() => {
+  if (S.wsConn && S._lastTickTime > 0) {
+    const lag = Date.now() - S._lastTickTime;
+    if (lag > 3000) updateLatencyBadge(lag);
+  }
+}, 5000);
+
+// ══════════════════════════════════════════════════════════════
+// HOVER TOOLTIP
+// ══════════════════════════════════════════════════════════════
+function initHoverTooltip() {
+  const wrapper = document.getElementById('priceWrap');
+  const tooltip = document.createElement('div');
+  tooltip.className = 'chart-hover-tooltip';
+  wrapper.appendChild(tooltip);
+
+  wrapper.addEventListener('mousemove', (e) => {
+    if (!S.bars.length) return;
+    const rect = wrapper.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const visible = getVisibleBars();
+    if (!visible.length) { tooltip.style.display = 'none'; return; }
+    const W = wrapper.clientWidth;
+    const cW = W - 6 - 68; // PAD.l + PAD.r
+    const bW = cW / visible.length;
+    const barIdx = Math.floor((mx - 6) / bW);
+    if (barIdx < 0 || barIdx >= visible.length) { tooltip.style.display = 'none'; return; }
+    const bar = visible[barIdx];
+    if (!bar) { tooltip.style.display = 'none'; return; }
+
+    const bull = bar.close >= bar.open;
+    const deltaSign = bar.delta >= 0 ? '+' : '';
+    const buyRatio = bar.sellVol > 0 ? (bar.buyVol / bar.sellVol) : Infinity;
+    const sellRatio = bar.buyVol > 0 ? (bar.sellVol / bar.buyVol) : Infinity;
+    const isImb = buyRatio > 3 || sellRatio > 3;
+    const imbalanceTxt = isImb
+      ? (buyRatio > sellRatio
+          ? `${Math.min(buyRatio,99).toFixed(1)}:1 BUY`
+          : `${Math.min(sellRatio,99).toFixed(1)}:1 SELL`)
+      : null;
+    const chgPct = bar.open ? ((bar.close - bar.open) / bar.open * 100) : 0;
+
+    tooltip.innerHTML = `<div class="ht-title">${new Date(bar.time).toLocaleTimeString()}</div>
+      <div class="ht-row"><span class="ht-lbl">OPEN</span><span class="ht-val">${fmtPx(bar.open,S.currentTicker)}</span></div>
+      <div class="ht-row"><span class="ht-lbl">HIGH</span><span class="ht-val bull">${fmtPx(bar.high,S.currentTicker)}</span></div>
+      <div class="ht-row"><span class="ht-lbl">LOW</span><span class="ht-val bear">${fmtPx(bar.low,S.currentTicker)}</span></div>
+      <div class="ht-row"><span class="ht-lbl">CLOSE</span><span class="ht-val ${bull?'bull':'bear'}">${fmtPx(bar.close,S.currentTicker)} <span style="font-size:8px">${fmtP(chgPct)}</span></span></div>
+      <div class="ht-sep"></div>
+      <div class="ht-row"><span class="ht-lbl">VOLUME</span><span class="ht-val">${fmt(bar.volume)}</span></div>
+      <div class="ht-row"><span class="ht-lbl">DELTA</span><span class="ht-val ${bar.delta>=0?'bull':'bear'}">${deltaSign}${fmt(bar.delta)}</span></div>
+      <div class="ht-row"><span class="ht-lbl">BUY VOL</span><span class="ht-val bull">${fmt(bar.buyVol)}</span></div>
+      <div class="ht-row"><span class="ht-lbl">SELL VOL</span><span class="ht-val bear">${fmt(bar.sellVol)}</span></div>
+      ${isImb ? `<div class="ht-sep"></div><div class="ht-row"><span class="ht-lbl">IMBALANCE</span><span class="ht-val amber">${imbalanceTxt}</span></div>` : ''}`;
+
+    tooltip.style.display = 'block';
+    const tW = tooltip.offsetWidth || 160;
+    const tH = tooltip.offsetHeight || 150;
+    let tx = mx + 14, ty = (e.clientY - rect.top) - tH / 2;
+    if (tx + tW > W - 4) tx = mx - tW - 14;
+    ty = Math.max(4, Math.min(ty, wrapper.clientHeight - tH - 4));
+    tooltip.style.left = tx + 'px';
+    tooltip.style.top  = ty + 'px';
+  });
+
+  wrapper.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+}
+
+// ══════════════════════════════════════════════════════════════
+// STRATEGY ENGINE — Plugin system for confidence-scored signals
+// ══════════════════════════════════════════════════════════════
+class StrategyEngine {
+  constructor() { this.strategies = []; }
+  register(s) { this.strategies.push(s); }
+  evaluate(bars, ind) {
+    if (!bars || !ind) return [];
+    const results = [];
+    for (const s of this.strategies) {
+      if (!s.enabled) continue;
+      try {
+        const sig = s.evaluate(bars, ind);
+        if (sig) results.push({ ...sig, name: s.name });
+      } catch(_) {}
+    }
+    return results.sort((a,b) => b.confidence - a.confidence);
+  }
+  topSignal(bars, ind) {
+    const sigs = this.evaluate(bars, ind);
+    return sigs.length ? sigs[0] : null;
+  }
+}
+
+const strategyEngine = new StrategyEngine();
+
+strategyEngine.register({
+  name: 'Full Confluence',
+  desc: 'All 5 conditions aligned — highest conviction',
+  enabled: true,
+  evaluate(bars, ind) {
+    if (ind.longEntry)  return { type:'LONG',  confidence: ind.condScore/5, reason: `${ind.condScore}/5 conditions met` };
+    if (ind.shortEntry) return { type:'SHORT', confidence: ind.condScore/5, reason: `${ind.condScore}/5 conditions met` };
+    return null;
+  }
+});
+
+strategyEngine.register({
+  name: 'Delta Divergence',
+  desc: 'Detects when order flow diverges from price direction',
+  enabled: true,
+  evaluate(bars, ind) {
+    if (ind.bullDiv && ind.bullTrend)  return { type:'LONG',  confidence: 0.65, reason: 'Bull divergence + trend aligned' };
+    if (ind.bearDiv && !ind.bullTrend) return { type:'SHORT', confidence: 0.65, reason: 'Bear divergence + trend aligned' };
+    return null;
+  }
+});
+
+strategyEngine.register({
+  name: 'Hidden Accumulation',
+  desc: 'Identifies stealth buying behind a declining price',
+  enabled: true,
+  evaluate(bars, ind) {
+    if (ind.hiddenAccum   && ind.bullTrend)  return { type:'LONG',  confidence: 0.70, reason: 'Hidden accumulation detected' };
+    if (ind.hiddenDistrib && !ind.bullTrend) return { type:'SHORT', confidence: 0.70, reason: 'Hidden distribution detected' };
+    return null;
+  }
+});
+
+strategyEngine.register({
+  name: 'Volume Spike Momentum',
+  desc: 'Trades in the direction of HTF volume spikes',
+  enabled: true,
+  evaluate(bars, ind) {
+    if (!ind.htfSpike) return null;
+    return { type: ind.bullTrend ? 'LONG' : 'SHORT', confidence: 0.55, reason: `HTF spike + ${ind.bullTrend?'bull':'bear'} trend` };
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// SETTINGS — add strategy engine section
+// ══════════════════════════════════════════════════════════════
+function renderSettingsWithStrategies() {
+  renderSettings();
+  // Append strategy section after existing settings content
+  const content = document.getElementById('rpContent');
+  if (!content) return;
+  const stratDiv = document.createElement('div');
+  stratDiv.style.cssText = 'padding:0 14px 14px';
+  stratDiv.innerHTML = `<div class="sf-divider" style="margin-bottom:12px"></div>
+    <div class="sec-lbl" style="margin-bottom:8px">STRATEGY ENGINE</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-bottom:10px;line-height:1.7">
+      Active strategies generate confidence-scored signals visible in the chart tooltip and signal panel.
+    </div>
+    ${strategyEngine.strategies.map((s,i) => `
+      <div class="strategy-card ${s.enabled?'active':''}" onclick="toggleStrategy(${i})">
+        <span class="strat-check">${s.enabled?'✓':'○'}</span>
+        <div class="strat-info">
+          <div class="strat-name">${esc(s.name)}</div>
+          <div class="strat-desc">${esc(s.desc)}</div>
+        </div>
+      </div>`).join('')}`;
+  content.appendChild(stratDiv);
+}
+
+function toggleStrategy(idx) {
+  const s = strategyEngine.strategies[idx];
+  if (!s) return;
+  s.enabled = !s.enabled;
+  renderSettings(); // re-render
+  if (S.lastInd && S.bars.length) {
+    S._stratSignals = strategyEngine.evaluate(S.bars, S.lastInd);
+  }
+  logAlert('info', `Strategy "${s.name}" ${s.enabled?'enabled':'disabled'}`);
+}
+
+// ══════════════════════════════════════════════════════════════
+// INIT EXTENSIONS — wire up hover tooltip + theme on load
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  // Apply saved theme
+  const savedTheme = localStorage.getItem('of_theme');
+  if (savedTheme === 'light') {
+    document.documentElement.dataset.theme = 'light';
+    const btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = '🌙 NIGHT';
+  }
+  // Wire hover tooltip
+  initHoverTooltip();
+});
 
 </script>
 </body>
