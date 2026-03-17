@@ -351,6 +351,40 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 /* ── WEBSOCKET LIVE BADGE ── */
 .ws-live{display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 7px;border-radius:4px;background:rgba(34,214,142,.1);border:1px solid rgba(34,214,142,.3);color:var(--bull);letter-spacing:.06em;cursor:default}
 .ws-dot{width:5px;height:5px;border-radius:50%;background:var(--bull);animation:blink 1.2s ease infinite;flex-shrink:0}
+
+/* ── FEAR & GREED WIDGET ── */
+.fng-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;border:1px solid;transition:all .4s;cursor:default;user-select:none;flex-shrink:0}
+.fng-pill.extreme-fear{color:var(--bear);border-color:rgba(240,73,104,.5);background:rgba(240,73,104,.1)}
+.fng-pill.fear{color:var(--amber);border-color:rgba(245,166,35,.5);background:rgba(245,166,35,.1)}
+.fng-pill.neutral{color:var(--tx2);border-color:var(--bd);background:transparent}
+.fng-pill.greed{color:var(--blue);border-color:rgba(74,124,220,.5);background:rgba(74,124,220,.1)}
+.fng-pill.extreme-greed{color:var(--bull);border-color:rgba(34,214,142,.5);background:rgba(34,214,142,.1)}
+.fng-delta{font-size:7px;opacity:.7;letter-spacing:.04em}
+
+/* ── FUNDING RATE / OI ── */
+.fund-pos{color:var(--bear)}.fund-neg{color:var(--bull)}.fund-neu{color:var(--tx2)}
+
+/* ── NEWS TAB ── */
+.news-card{padding:10px 12px;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .15s;text-decoration:none;display:block}
+.news-card:hover{background:rgba(0,196,160,.04)}
+.news-card:last-child{border-bottom:none}
+.news-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx1);line-height:1.6;margin-bottom:5px;letter-spacing:.02em}
+.news-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.news-source{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--teal);letter-spacing:.1em;text-transform:uppercase}
+.news-time{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3)}
+.news-empty{padding:32px 14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx3);letter-spacing:.1em;line-height:2}
+.news-loading{padding:24px 14px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3);letter-spacing:.1em;animation:pulse .8s ease infinite}
+.news-hdr{padding:8px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--s1);z-index:2}
+.news-hdr-lbl{font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.2em;color:var(--tx3);text-transform:uppercase}
+.news-refresh{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--teal);cursor:pointer;letter-spacing:.08em;padding:3px 8px;border:1px solid rgba(0,196,160,.3);border-radius:4px;background:var(--teal2)}
+.news-refresh:hover{background:rgba(0,196,160,.22)}
+.news-vol-bar{height:3px;background:var(--bd);border-radius:2px;overflow:hidden;margin:3px 0}
+.news-vol-fill{height:100%;border-radius:2px;background:var(--teal);transition:width .4s}
+
+/* ── SIGNAL ALERT TYPES ── */
+.alert-type-row{display:flex;gap:5px;margin-bottom:8px}
+.alert-type-btn{flex:1;padding:5px;background:var(--card);border:1px solid var(--bd);border-radius:4px;color:var(--tx3);font-family:'JetBrains Mono',monospace;font-size:8px;cursor:pointer;letter-spacing:.06em;transition:all .15s;text-align:center}
+.alert-type-btn.on{background:var(--teal2);border-color:rgba(0,196,160,.4);color:var(--teal)}
 </style>
 </head>
 <body>
@@ -424,6 +458,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <div class="ab-item"><div class="ab-n">24H LOW</div><div class="ab-v" id="abLow" style="color:var(--bear)">—</div></div>
   <div class="ab-item"><div class="ab-n">24H VOL</div><div class="ab-v" id="abVol">—</div></div>
   <div class="ab-item"><div class="ab-n">MKT CAP</div><div class="ab-v" id="abMcap">—</div></div>
+  <!-- Funding Rate + OI — shown for crypto perpetuals only -->
+  <div class="ab-sep" id="abFundSep" style="display:none"></div>
+  <div class="ab-item" id="abFundItem" style="display:none"><div class="ab-n">FUNDING</div><div class="ab-v fund-neu" id="abFunding">—</div></div>
+  <div class="ab-item" id="abOIItem" style="display:none"><div class="ab-n">OPEN INT</div><div class="ab-v" id="abOI">—</div></div>
+  <!-- Fear & Greed Index — shown for crypto only -->
+  <div class="ab-sep" id="abFngSep" style="display:none"></div>
+  <div class="ab-item" id="abFngItem" style="display:none">
+    <div class="ab-n">SENTIMENT</div>
+    <div id="abFng" class="fng-pill neutral">— —</div>
+  </div>
   <div class="ab-source">
     <div class="src-badge" id="srcBadge" style="color:var(--tx3);border-color:var(--bd)">—</div>
     <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);letter-spacing:.1em" id="pollTimer">—</div>
@@ -595,6 +639,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="rp-tab on" id="tab-trades" onclick="setTab('trades')">TRADES</div>
       <div class="rp-tab" id="tab-backtest" onclick="setTab('backtest')">BACKTEST</div>
       <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">SCANNER</div>
+      <div class="rp-tab" id="tab-news" onclick="setTab('news')">NEWS</div>
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
     </div>
@@ -947,7 +992,14 @@ const S = {
   wsConn: null,     // active WebSocket connection
   priceAlerts: JSON.parse(localStorage.getItem('of_price_alerts') || '[]'),
   aiEndpoint: localStorage.getItem('of_ai_endpoint') || '',
-  btResults: null   // last backtest result
+  btResults: null,  // last backtest result
+  // ── New v7 additions ──────────────────────────────────────────
+  fngData: null,          // { value, classification, delta } from alternative.me
+  fngLastFetch: 0,        // epoch ms of last F&G fetch
+  newsCache: {},          // keyed by ticker.sym → { articles, fetchedAt }
+  proxyUrl: localStorage.getItem('of_proxy_url') || '', // user-configurable CORS proxy
+  fundingCache: {},       // keyed by binance symbol → { fundingRate, openInterest, fetchedAt }
+  alertMode: 'price',     // 'price' | 'signal' — active alert-add mode
 };
 
 // ═══════════════════════════════════════════
@@ -1161,6 +1213,14 @@ async function loadCurrentTicker() {
   runIndicators();
   drawAll();
 
+  // Update crypto-specific asset bar widgets (F&G, Funding, OI)
+  updateCryptoAssetBar();
+  // Invalidate news cache so next NEWS tab open re-fetches for the new ticker
+  if (S.newsCache[t.sym] && Date.now() - S.newsCache[t.sym].fetchedAt > 5*60*1000) {
+    delete S.newsCache[t.sym];
+  }
+  if (S.currentTab === 'news') renderNews();
+
   // For crypto: use WebSocket for real-time data; fall back to REST polling
   // For stocks/ETFs: REST polling only (Yahoo Finance has no public WS)
   const isCrypto = t.type === 'crypto';
@@ -1221,7 +1281,10 @@ async function fetchYahoo(sym, signal) {
   const interval = YF_INTERVAL[S.currentTF] || '5m';
   const range    = YF_RANGE[S.currentTF]    || '5d';
   const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=${interval}&range=${range}&includePrePost=false`;
+  // Use user-configured proxy first, then fall back to public proxies
+  const userProxy = S.proxyUrl ? S.proxyUrl + encodeURIComponent(yfUrl) : null;
   const proxies = [
+    ...(userProxy ? [userProxy] : []),
     'https://corsproxy.io/?' + encodeURIComponent(yfUrl),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(yfUrl),
   ];
@@ -1243,9 +1306,11 @@ async function fetchYahoo(sym, signal) {
         // Approximate buy/sell split from price range (Pine Script method)
         const buyVol  = vol * (c - l) / rng;
         const sellVol = vol * (h - c) / rng;
-        return { time:t*1000,open:o,high:h,low:l,close:c,volume:vol,
+        const bar = { time:t*1000,open:o,high:h,low:l,close:c,volume:vol,
           buyVol, sellVol, delta:buyVol-sellVol,
           buyDol:buyVol*c, sellDol:sellVol*c, body:Math.abs(c-o) };
+        // Reject bars with non-finite/out-of-range values (CORS proxy integrity guard)
+        return validateBar(bar) ? bar : null;
       }).filter(Boolean);
       if (S.bars.length < 5) continue;
       S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
@@ -1958,13 +2023,14 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','backtest','portfolio','alerts','settings'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
+  ['trades','backtest','portfolio','news','alerts','settings'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettings();return;}
   if(tab==='alerts'){renderAlerts();return;}
   if(tab==='trades'){renderTrades();return;}
   if(tab==='backtest'){renderBacktest();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
+  if(tab==='news'){renderNews();return;}
 }
 function setView(v){resetChartState();S.currentView=v;['vbPrice','vbDelta','vbDom'].forEach(id=>document.getElementById(id).classList.remove('on'));const m={price:'vbPrice',delta:'vbDelta',dom:'vbDom'};document.getElementById(m[v]).classList.add('on');scheduleRedraw();}
 function setTF(tf){resetChartState();S.currentTF=tf;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.toggle('on',b.textContent.toLowerCase()===tf.toLowerCase()));loadCurrentTicker();}
@@ -2000,6 +2066,26 @@ function renderSettings() {
         style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--tx1);font-family:'JetBrains Mono',monospace;font-size:9px;outline:none;margin-top:4px"
         oninput="S.aiEndpoint=this.value.trim();localStorage.setItem('of_ai_endpoint',S.aiEndpoint);document.getElementById('aiBtn').style.display=S.aiEndpoint?'block':'none'">
       <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:4px;line-height:1.6">Cloudflare Worker proxy to Claude API.<br>Leave blank to disable AI analysis button.</div>
+    </div>
+    <div class="sf-divider"></div>
+    <div class="sec-lbl" style="margin-bottom:2px">DATA SOURCES</div>
+    <div class="sf-group">
+      <label class="sf-label">CORS PROXY URL <span style="color:var(--tx3);font-weight:400">(optional)</span></label>
+      <input type="text" id="proxyUrlInp" value="${esc(S.proxyUrl)}" placeholder="https://corsproxy.io/? (default)"
+        style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--tx1);font-family:'JetBrains Mono',monospace;font-size:9px;outline:none;margin-top:4px"
+        oninput="S.proxyUrl=this.value.trim();localStorage.setItem('of_proxy_url',S.proxyUrl)">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:4px;line-height:1.6">Custom CORS proxy for Yahoo Finance data.<br>Leave blank to use default (corsproxy.io).<br>Self-host for best reliability.</div>
+    </div>
+    <div class="sf-group" style="margin-top:6px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);line-height:1.7;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:8px">
+        <span style="color:var(--teal)">FREE DATA SOURCES ACTIVE:</span><br>
+        ✓ Binance — crypto OHLCV + WS<br>
+        ✓ Yahoo Finance — stocks/ETFs<br>
+        ✓ Binance Futures — funding, OI<br>
+        ✓ Alternative.me — Fear &amp; Greed<br>
+        ✓ GDELT Doc API — news feed<br>
+        <span style="color:var(--tx3)">All sources: free, no API key required.</span>
+      </div>
     </div>
     <div class="sf-divider"></div>
     <button class="apply-btn teal" onclick="applySettings()">⚡ APPLY & RECALCULATE</button>
@@ -2086,6 +2172,10 @@ window.addEventListener('load', () => {
   setTab('trades');
   renderDropdown(FLAT_TICKERS);
   loadCurrentTicker();
+  // Pre-fetch Fear & Greed on load — visible immediately when user switches to crypto
+  fetchFearGreed();
+  // Refresh F&G every 10 minutes
+  setInterval(fetchFearGreed, 10 * 60 * 1000);
 });
 document.getElementById('customSymInput').addEventListener('keydown', e => { if(e.key==='Enter') loadCustomSymbol(); });
 
@@ -2401,6 +2491,15 @@ async function analyzeSignalWithAI(){
   aiConfRow.style.display='none'; aiBtn.textContent='⏳…'; aiBtn.style.pointerEvents='none';
   const mcdxBeh=document.getElementById('mcdxBehavior')?.textContent||'?';
   const mcdxPC =document.getElementById('mcdxPC')?.textContent||'?';
+  const fng = S.fngData && t.type==='crypto' ? `Fear & Greed: ${S.fngData.value}/100 (${S.fngData.classification})` : '';
+  const fundKey = t.binance || '';
+  const fundData = fundKey && S.fundingCache[fundKey];
+  const fundStr = fundData && fundData.fundingRate !== null ? `Funding Rate: ${(fundData.fundingRate*100).toFixed(4)}% | OI: ${fundData.openInterest ? fmt(fundData.openInterest) : '—'}` : '';
+  const newsLines = (() => {
+    const cached = S.newsCache[t.sym];
+    if (!cached || !cached.articles.length) return '';
+    return 'Recent Headlines:\n' + cached.articles.slice(0,3).map(a => `  - ${a.title}`).join('\n');
+  })();
   const prompt=`You are an expert order flow trading analyst. Briefly assess this signal in 2 sentences, then give a confidence score 0-100.
 
 Ticker: ${t.sym} (${t.name}) · Timeframe: ${S.currentTF.toUpperCase()}
@@ -2409,7 +2508,7 @@ Trend: ${ind.bullTrend?'BULL':'BEAR'} | HTF Vol Spike: ${ind.htfSpike?'YES':'NO'
 Bull Divergence: ${ind.bullDiv} | Hidden Accum: ${ind.hiddenAccum} | Bull Exhaust: ${ind.bullExhaust}
 MCDX PC: ${mcdxPC} | Behavior: ${mcdxBeh}
 Session Dominance: BUY ${ind.dominance.toFixed(0)}% / SELL ${(100-ind.dominance).toFixed(0)}%
-Price: ${fmtPx(cur.close,t)} | Vol vs Avg: ${ind.volRatio.toFixed(0)}%
+Price: ${fmtPx(cur.close,t)} | Vol vs Avg: ${ind.volRatio.toFixed(0)}%${fng ? '\n' + fng : ''}${fundStr ? '\n' + fundStr : ''}${newsLines ? '\n' + newsLines : ''}
 
 Reply with ONLY valid JSON (no markdown): {"analysis":"...2 sentences...","confidence":NUMBER_0_TO_100}`;
   try {
@@ -2444,6 +2543,7 @@ document.addEventListener('keydown',e=>{
   else if(k==='b'||k==='B'){setTab('backtest');if(!S.btResults)runBacktest();}
   else if(k==='t'||k==='T')setTab('trades'); else if(k==='a'||k==='A')setTab('alerts');
   else if(k==='s'||k==='S')setTab('settings'); else if(k==='p'||k==='P')setTab('portfolio');
+  else if(k==='n'||k==='N')setTab('news');
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -2665,12 +2765,12 @@ function toggleScanner() {
 function scanFavorites() {
   S.lastScanTime = ts();
   if (!S.favorites.length) return;
-  
+
   S.favorites.forEach((sym, index) => {
     setTimeout(() => {
       const ticker = FLAT_TICKERS.find(t => t.sym === sym);
       if (!ticker) return;
-      
+
       if (sym === S.currentTicker.sym && S.lastInd) {
         S.scanResults[sym] = {
           signal: S.lastInd.longEntry ? 'long' : S.lastInd.shortEntry ? 'short' : 'wait',
@@ -2696,12 +2796,272 @@ function scanFavorites() {
       }
     }, index * 500);
   });
-  
+
   setTimeout(() => {
     if (S.currentTab === 'portfolio') renderPortfolio();
   }, S.favorites.length * 500 + 1000);
 }
 
+// ══════════════════════════════════════════════════════════════
+// BAR DATA VALIDATION
+// Rejects bars with non-finite, zero, or wildly out-of-range values
+// that could corrupt indicator math from a compromised CORS proxy.
+// ══════════════════════════════════════════════════════════════
+function validateBar(b) {
+  if (!b) return false;
+  const fields = [b.open, b.high, b.low, b.close, b.volume];
+  for (const v of fields) {
+    if (!Number.isFinite(v) || v < 0 || v > 1e12) return false;
+  }
+  // High must be >= low, close must be within high/low range
+  if (b.high < b.low) return false;
+  if (b.close > b.high * 1.01 || b.close < b.low * 0.99) return false;
+  return true;
+}
+
+// ══════════════════════════════════════════════════════════════
+// FEAR & GREED INDEX  (alternative.me — free, no auth, CORS-OK)
+// Fetches once on page load then every 10 minutes.
+// ══════════════════════════════════════════════════════════════
+async function fetchFearGreed() {
+  const now = Date.now();
+  if (S.fngData && now - S.fngLastFetch < 10 * 60 * 1000) {
+    updateFGWidget(); return;
+  }
+  try {
+    const r = await fetch('https://api.alternative.me/fng/?limit=2&format=json');
+    if (!r.ok) return;
+    const d = await r.json();
+    const today = d.data?.[0], yesterday = d.data?.[1];
+    if (!today) return;
+    const val = parseInt(today.value, 10);
+    const prevVal = yesterday ? parseInt(yesterday.value, 10) : val;
+    S.fngData = { value: val, classification: today.value_classification, delta: val - prevVal };
+    S.fngLastFetch = now;
+    updateFGWidget();
+  } catch(_) {}
+}
+
+function updateFGWidget() {
+  const d = S.fngData;
+  const isCrypto = S.currentTicker.type === 'crypto';
+  ['abFngSep','abFngItem'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isCrypto ? '' : 'none';
+  });
+  if (!d || !isCrypto) return;
+  const pill = document.getElementById('abFng');
+  if (!pill) return;
+  const cls = d.value <= 25 ? 'extreme-fear' : d.value <= 45 ? 'fear' : d.value <= 55 ? 'neutral' : d.value <= 75 ? 'greed' : 'extreme-greed';
+  const deltaStr = d.delta > 0 ? `+${d.delta}` : `${d.delta}`;
+  pill.className = `fng-pill ${cls}`;
+  pill.innerHTML = `${d.value} <span style="font-size:8px;opacity:.8">${d.classification.toUpperCase()}</span> <span class="fng-delta">(${deltaStr})</span>`;
+  pill.title = `Fear & Greed Index: ${d.value}/100 — ${d.classification}\nChange from yesterday: ${deltaStr}\nSource: alternative.me`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// FUNDING RATE + OPEN INTEREST  (Binance Futures — no auth)
+// Shows for crypto perpetuals only; hidden for stocks/ETFs.
+// ══════════════════════════════════════════════════════════════
+async function fetchFundingOI(symbol) {
+  const now = Date.now();
+  const cached = S.fundingCache[symbol];
+  if (cached && now - cached.fetchedAt < 60 * 1000) { updateFundingBar(symbol); return; }
+  try {
+    const [rFund, rOI] = await Promise.all([
+      fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`),
+      fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`)
+    ]);
+    let rate = null, oi = null;
+    if (rFund.ok) {
+      const data = await rFund.json();
+      rate = data[0] ? parseFloat(data[0].fundingRate) : null;
+    }
+    if (rOI.ok) {
+      const data = await rOI.json();
+      oi = data.openInterest ? parseFloat(data.openInterest) : null;
+    }
+    S.fundingCache[symbol] = { fundingRate: rate, openInterest: oi, fetchedAt: now };
+    updateFundingBar(symbol);
+  } catch(_) {}
+}
+
+function updateFundingBar(symbol) {
+  const isCrypto = S.currentTicker.type === 'crypto' && S.currentTicker.binance;
+  const show = isCrypto && S.currentTicker.binance === symbol;
+  ['abFundSep','abFundItem','abOIItem'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+  if (!show) return;
+  const c = S.fundingCache[symbol];
+  if (!c) return;
+  const fundEl = document.getElementById('abFunding');
+  const oiEl   = document.getElementById('abOI');
+  if (fundEl && c.fundingRate !== null) {
+    const pct = (c.fundingRate * 100).toFixed(4);
+    const cls  = c.fundingRate > 0.0005 ? 'fund-pos' : c.fundingRate < -0.0005 ? 'fund-neg' : 'fund-neu';
+    fundEl.className = `ab-v ${cls}`;
+    fundEl.textContent = (c.fundingRate >= 0 ? '+' : '') + pct + '%';
+    fundEl.title = `Funding Rate: ${pct}%\n+= longs pay shorts (crowded longs)\n-= shorts pay longs (crowded shorts)`;
+  }
+  if (oiEl && c.openInterest !== null) {
+    const price = S.bars.length ? S.bars[S.bars.length-1].close : 0;
+    oiEl.textContent = price > 0 ? fmt(c.openInterest * price) : fmt(c.openInterest);
+    oiEl.title = `Open Interest: ${fmt(c.openInterest)} contracts`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// GDELT DOC API v2  (free, no auth, CORS-OK)
+// Maps each ticker to a relevant keyword query.
+// Mode=ArtList returns up to 75 recent news articles.
+// ══════════════════════════════════════════════════════════════
+const GDELT_QUERIES = {
+  'BTCUSDT': 'bitcoin OR BTC cryptocurrency',
+  'ETHUSDT': 'ethereum OR ETH cryptocurrency',
+  'SOLUSDT': 'solana OR SOL cryptocurrency',
+  'BNBUSDT': 'BNB binance coin',
+  'XRPUSDT': 'XRP ripple cryptocurrency',
+  'DOGEUSDT': 'dogecoin DOGE',
+  'AVAXUSDT': 'avalanche AVAX cryptocurrency',
+  'ADAUSDT': 'cardano ADA cryptocurrency',
+  'NVDA': '"NVIDIA" stock',
+  'AAPL': '"Apple" stock OR "Apple Inc"',
+  'MSFT': '"Microsoft" stock',
+  'GOOGL': '"Google" OR "Alphabet" stock',
+  'AMZN': '"Amazon" stock',
+  'META': '"Meta" OR "Facebook" stock',
+  'TSLA': '"Tesla" stock',
+  'NFLX': '"Netflix" stock',
+  'SPY': '"S&P 500" OR "stock market"',
+  'QQQ': '"Nasdaq" OR "tech stocks"',
+  'IWM': '"Russell 2000" small cap',
+  'DIA': '"Dow Jones" industrial',
+  'GLD': 'gold prices commodity',
+  'TLT': 'treasury bonds interest rates',
+  'GC=F': 'gold futures commodity prices',
+  'CL=F': 'crude oil price WTI',
+  'SI=F': 'silver futures prices',
+  'NG=F': 'natural gas price',
+};
+
+function gdeltQueryForTicker(ticker) {
+  if (GDELT_QUERIES[ticker.sym]) return GDELT_QUERIES[ticker.sym];
+  // Fallback: use the ticker name
+  return `"${ticker.name}"`;
+}
+
+function gdeltParseDate(seendate) {
+  // GDELT format: YYYYMMDDTHHmmssZ
+  if (!seendate || seendate.length < 15) return null;
+  try {
+    const y = seendate.slice(0,4), mo = seendate.slice(4,6), d = seendate.slice(6,8);
+    const h = seendate.slice(9,11), mi = seendate.slice(11,13), s = seendate.slice(13,15);
+    return new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}Z`);
+  } catch(_) { return null; }
+}
+
+function gdeltRelTime(seendate) {
+  const dt = gdeltParseDate(seendate);
+  if (!dt) return '';
+  const diff = Math.floor((Date.now() - dt.getTime()) / 60000); // minutes
+  if (diff < 60) return diff + 'm ago';
+  if (diff < 1440) return Math.floor(diff/60) + 'h ago';
+  return Math.floor(diff/1440) + 'd ago';
+}
+
+async function fetchGDELTNews(ticker) {
+  const sym = ticker.sym;
+  const cached = S.newsCache[sym];
+  const CACHE_MS = 5 * 60 * 1000; // 5-minute cache
+  if (cached && Date.now() - cached.fetchedAt < CACHE_MS) return cached.articles;
+
+  const query = encodeURIComponent(gdeltQueryForTicker(ticker));
+  const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${query}%20sourcelang:english&mode=ArtList&maxrecords=15&timespan=6h&format=json`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const articles = (data.articles || []).filter(a => a.title && a.url);
+    S.newsCache[sym] = { articles, fetchedAt: Date.now() };
+    return articles;
+  } catch(_) {
+    // Fallback: try 24h timespan if 6h returns nothing
+    try {
+      const r2 = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?query=${query}%20sourcelang:english&mode=ArtList&maxrecords=15&timespan=1d&format=json`);
+      if (!r2.ok) return [];
+      const data2 = await r2.json();
+      const articles = (data2.articles || []).filter(a => a.title && a.url);
+      S.newsCache[sym] = { articles, fetchedAt: Date.now() };
+      return articles;
+    } catch(_) { return []; }
+  }
+}
+
+async function renderNews() {
+  if (S.currentTab !== 'news') return;
+  const ticker = S.currentTicker;
+  const content = document.getElementById('rpContent');
+  const cached = S.newsCache[ticker.sym];
+
+  const hdr = () => `<div class="news-hdr">
+    <span class="news-hdr-lbl">NEWS · ${esc(ticker.sym)}</span>
+    <span class="news-refresh" onclick="S.newsCache['${esc(ticker.sym)}']=null;renderNews()">⟳ REFRESH</span>
+  </div>`;
+
+  if (cached && cached.articles.length === 0) {
+    content.innerHTML = hdr() + `<div class="news-empty">NO RECENT NEWS<br><span style="font-size:8px">No articles found in the last 24h for ${esc(ticker.name)}.</span></div>`;
+    return;
+  }
+  if (!cached) {
+    content.innerHTML = hdr() + `<div class="news-loading">FETCHING GDELT NEWS...</div>`;
+    const articles = await fetchGDELTNews(ticker);
+    if (S.currentTab !== 'news' || S.currentTicker.sym !== ticker.sym) return; // stale
+    if (!articles.length) {
+      content.innerHTML = hdr() + `<div class="news-empty">NO RECENT NEWS<br><span style="font-size:8px">No articles found for ${esc(ticker.name)}.</span></div>`;
+      return;
+    }
+  }
+  const articles = S.newsCache[ticker.sym]?.articles || [];
+  const ago = S.newsCache[ticker.sym]?.fetchedAt ? Math.floor((Date.now() - S.newsCache[ticker.sym].fetchedAt)/1000) + 's ago' : '';
+  let html = hdr();
+  html += `<div style="padding:5px 12px 4px;font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);letter-spacing:.1em">GDELT DOC API · ${articles.length} ARTICLES · ${ago}</div>`;
+  articles.forEach(a => {
+    const domain = esc(a.domain || (a.url ? new URL(a.url).hostname.replace('www.','') : ''));
+    const relTime = gdeltRelTime(a.seendate);
+    html += `<a class="news-card" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">
+      <div class="news-title">${esc(a.title)}</div>
+      <div class="news-meta">
+        <span class="news-source">${domain}</span>
+        <span class="news-time">${relTime}</span>
+      </div>
+    </a>`;
+  });
+  content.innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CRYPTO-SPECIFIC ASSET BAR UPDATES
+// Called after every ticker switch; shows/hides F&G + Funding items.
+// ══════════════════════════════════════════════════════════════
+function updateCryptoAssetBar() {
+  const isCrypto = S.currentTicker.type === 'crypto' && !!S.currentTicker.binance;
+  // Hide funding/OI for non-crypto
+  ['abFundSep','abFundItem','abOIItem'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  if (isCrypto) {
+    fetchFearGreed();
+    fetchFundingOI(S.currentTicker.binance);
+  } else {
+    ['abFngSep','abFngItem'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+}
 
 </script>
 </body>
