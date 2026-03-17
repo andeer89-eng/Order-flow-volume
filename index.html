@@ -563,9 +563,21 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="sec-lbl">METRICS</div>
       <div class="metrics-2">
         <div class="mc"><div class="mc-n">VOL vs AVG</div><div class="mc-v" id="mVolRatio">—</div></div>
-        <div class="mc"><div class="mc-n">DELTA</div><div class="mc-v" id="mDelta">—</div></div>
+        <div class="mc"><div class="mc-n">BAR IMB</div><div class="mc-v" id="mImbalance">—</div></div>
         <div class="mc"><div class="mc-n">BUY $</div><div class="mc-v bull" id="mBuyDol">—</div></div>
         <div class="mc"><div class="mc-n">SELL $</div><div class="mc-v bear" id="mSellDol">—</div></div>
+        <div class="mc"><div class="mc-n">SESSION CVD</div><div class="mc-v" id="mCVD">—</div></div>
+        <div class="mc"><div class="mc-n">DELTA</div><div class="mc-v" id="mDelta">—</div></div>
+      </div>
+      <!-- VWAP metric row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">VWAP</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">Price vs Session VWAP</div></div>
+        <div class="htf-val off" id="vwapVal">—</div>
+      </div>
+      <!-- Market state row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">MARKET STATE</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">ABSORB / ACCUM / DISTR</div></div>
+        <div class="htf-val off" id="mktStateVal">—</div>
       </div>
     </div>
     <div class="lp-sec">
@@ -573,7 +585,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="cond-list">
         <div class="cond" id="c0">
           <div class="cond-dot"></div>
-          <div class="cond-n">Bull Trend (EMA50>200)</div>
+          <div class="cond-n">Bull Trend (EMA50>200+VWAP)</div>
           <div class="cond-s" id="c0s">—</div>
           <div class="cond-tooltip" id="c0tip">EMA50: — > EMA200: —</div>
         </div>
@@ -671,6 +683,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">SCANNER</div>
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
+      <div class="rp-tab" id="tab-guide" onclick="setTab('guide')">GUIDE</div>
     </div>
     <div class="rp-content" id="rpContent"></div>
   </div>
@@ -932,6 +945,7 @@ class ManualTrading {
     let updated = false;
     this.trades.forEach(t => {
       if (t.open) {
+        if (!t.entry || t.entry <= 0) return; // guard against corrupted localStorage entry
         t.currentPrice = currentPrice;
         t.bars++;
         t.pnlPct = t.side === 'long' ? ((currentPrice - t.entry) / t.entry * 100) : ((t.entry - currentPrice) / t.entry * 100);
@@ -1011,12 +1025,16 @@ const S = {
   pollTimer:null, pollSec:0,
   pnl:{ open:null, closed:[], equity:[0] },
   lastInd:null,
-  _e50:[], _e200:[], _volMA:[],
+  _e50:[], _e200:[], _volMA:[], _vwap:[], _cvdArr:[],
   currentTicker: FLAT_TICKERS[0],
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
+  // TV-style chart viewport
+  viewEnd: null,   // null = auto (last bar flush-right); float bar-index at right edge
+  viewBars: 80,    // number of bars currently visible
+  _crossX: null, _crossY: null, // crosshair canvas coords (null = hidden)
   focusMode: false,
-  _lastTickTime: 0, _wsRetryDelay: 2000,
+  _lastTickTime: 0,
   favorites: JSON.parse(localStorage.getItem('of_favorites') || '[]'),
   watchlist: JSON.parse(localStorage.getItem('of_watchlist') || '[]'),
   scannerActive: false, scannerInterval: null, scanResults: {}, lastScanTime: null,
@@ -1035,7 +1053,12 @@ const fmtP  = n=>(n>=0?'+':'')+n.toFixed(2)+'%';
 const fmtPx = (n,tk) => { if(!n||isNaN(n))return'—'; if(tk&&tk.type==='crypto') return n>=1000?n.toFixed(0):n>=1?n.toFixed(2):n.toFixed(6); return n>=100?n.toFixed(2):n.toFixed(4); };
 const ts = () => { const d=new Date(); return [d.getHours(),d.getMinutes(),d.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':'); };
 const ema = (data,p) => { const k=2/(p+1); return data.reduce((acc,v,i)=>{acc.push(i===0?v:v*k+acc[i-1]*(1-k));return acc;},[]);};
-const sma = (arr,p) => arr.map((_,i)=>{ if(i<p-1)return null; return arr.slice(i-p+1,i+1).reduce((a,b)=>a+b,0)/p;});
+// Sliding-window O(n) SMA — avoids O(n·p) slice+reduce per element
+const sma = (arr,p) => { const out=new Array(arr.length).fill(null); let sum=0; for(let i=0;i<arr.length;i++){sum+=arr[i];if(i>=p)sum-=arr[i-p];if(i>=p-1)out[i]=sum/p;} return out; };
+// Session-reset VWAP — shared by runIndicators() and computeIndicatorsForBars()
+function calcSessionVWAP(bars){const arr=[];let cumPV=0,cumV=0,lastDay=-1;for(const bar of bars){const day=Math.floor(bar.time/86400000);if(day!==lastDay&&lastDay!==-1){cumPV=0;cumV=0;}lastDay=day;const hlc3=(bar.high+bar.low+bar.close)/3;cumPV+=hlc3*bar.volume;cumV+=bar.volume;arr.push(cumV>0?cumPV/cumV:bar.close);}return arr;}
+// Cumulative dollar volume — single source of truth used in 5 load paths
+function recalcCumVolume(){S.cumBuy=S.bars.reduce((a,b)=>a+b.buyDol,0);S.cumSell=S.bars.reduce((a,b)=>a+b.sellDol,0);}
 // HTML entity encoder — prevents XSS when inserting user-supplied strings into innerHTML
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
@@ -1283,8 +1306,7 @@ async function fetchBinance(binanceSym, signal) {
           delta:takerBuy-takerSell, buyDol:takerBuy*c, sellDol:takerSell*c,
           body:Math.abs(c-o) };
       });
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       updateAssetBar24h_Binance(binanceSym);
       setSrcBadge('BINANCE','bull');
       logAlert('info',`✓ Binance: ${S.bars.length} bars for ${binanceSym}`);
@@ -1325,8 +1347,7 @@ async function fetchYahoo(sym, signal) {
           buyDol:buyVol*c, sellDol:sellVol*c, body:Math.abs(c-o) };
       }).filter(Boolean);
       if (S.bars.length < 5) continue;
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       updateAssetBar_Yahoo(result, sym);
       setSrcBadge('YAHOO FINANCE','teal');
       logAlert('info',`✓ Yahoo: ${S.bars.length} bars for ${sym}`);
@@ -1350,7 +1371,6 @@ function startWebSocket(binanceSym, retryDelay) {
   try { ws = new WebSocket(url); } catch(e) { return; }
   ws.onopen = () => {
     S.wsConn = ws;
-    S._wsRetryDelay = 2000; // reset backoff on success
     document.getElementById('wsLiveBadge').style.display = 'inline-flex';
     if (S.pollTimer)     { clearInterval(S.pollTimer);     S.pollTimer = null; }
     if (S._pollCountdown){ clearInterval(S._pollCountdown); S._pollCountdown = null; }
@@ -1378,8 +1398,7 @@ function startWebSocket(binanceSym, retryDelay) {
       const last = S.bars[S.bars.length - 1];
       if (last.time === bar.time) Object.assign(last, bar);
       else if (bar.time > last.time) { S.bars.push(bar); if (S.bars.length > 300) S.bars.shift(); }
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol, 0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol, 0);
+      recalcCumVolume();
       runIndicators();
       scheduleRedraw();
       checkPriceAlerts(bar.close);
@@ -1451,8 +1470,7 @@ async function fetchBinancePoll(binanceSym) {
           if (S.bars.length > 300) S.bars.shift();
         }
       });
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       return true;
     } catch(_) {}
   }
@@ -1497,8 +1515,7 @@ async function fetchYahooPoll(sym) {
           if (S.bars.length > 300) S.bars.shift();
         }
       });
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       return true;
     } catch(_) {}
   }
@@ -1593,7 +1610,11 @@ function computeIndicatorsForBars(bars, settings) {
   const cur = bars[n-1];
   const closes = bars.map(b=>b.close), vols = bars.map(b=>b.volume), bodies = bars.map(b=>b.body||Math.abs(b.close-b.open));
   const e50 = ema(closes, 50), e200 = ema(closes, 200);
-  const bullTrend = e50[n-1] > e200[n-1];
+  // Session VWAP
+  const vwap2=calcSessionVWAP(bars)[n-1];
+  const bullTrend = e50[n-1]>e200[n-1] && cur.close>vwap2;
+  const bearTrend = e50[n-1]<e200[n-1] && cur.close<vwap2;
+  const trendState = bullTrend?'BULL':bearTrend?'BEAR':'RANGE';
   const volMA = sma(vols, length), volMAn = volMA[n-1] || 1;
   const bodyMA = sma(bodies, 20), bodyMAn = bodyMA[n-1] || 1;
   // HTF volume spike (rolling 5-bar sum vs rolling average)
@@ -1603,23 +1624,25 @@ function computeIndicatorsForBars(bars, settings) {
   const htfMA = htfVols.length >= length ? htfVols.slice(-length).reduce((a,b)=>a+b,0)/length : htfV;
   const htfSpike = htfV > htfMA * spikeMult;
   const buyVols = bars.map(b=>b.buyVol), sellVols = bars.map(b=>b.sellVol);
-  const hasPivotLow  = n>10 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
-  const hasPivotHigh = n>10 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
-  const bullDiv = hasPivotLow  && cur.buyVol  > (buyVols[n-7]||0);
-  const bearDiv = hasPivotHigh && cur.sellVol > (sellVols[n-7]||0);
+  const hasPivotLow  = n>11 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
+  const hasPivotHigh = n>11 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
+  const bullDiv = hasPivotLow  && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
+  const bearDiv = hasPivotHigh && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
   const absorption    = cur.volume > volMAn*1.8 && (cur.body||0) < bodyMAn*0.5;
   const hiddenAccum   = cur.buyVol > cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
   const hiddenDistrib = cur.sellVol > cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
-  const bullExhaust   = cur.delta>0 && n>1 && cur.close<=bars[n-2].close && (cur.body||0)<bodyMAn;
-  const bearExhaust   = cur.delta<0 && n>1 && cur.close>=bars[n-2].close && (cur.body||0)<bodyMAn;
+  const aboveAvgVol   = cur.volume>volMAn;
+  const bullExhaust   = cur.delta>0 && n>1 && cur.close<cur.open && cur.close<=bars[n-2].close && (cur.body||0)<bodyMAn && aboveAvgVol;
+  const bearExhaust   = cur.delta<0 && n>1 && cur.close>cur.open && cur.close>=bars[n-2].close && (cur.body||0)<bodyMAn && aboveAvgVol;
+  const marketState   = absorption?'ABSORB':hiddenAccum?'ACCUM':hiddenDistrib?'DISTR':'—';
   const totalCum = bars.reduce((a,b)=>a+b.buyDol,0) + bars.reduce((a,b)=>a+b.sellDol,0);
   const dominance = totalCum ? (bars.reduce((a,b)=>a+b.buyDol,0)/totalCum*100) : 50;
   const longEntry  = bullTrend && htfSpike && (bullDiv||hiddenAccum) && !bullExhaust;
-  const shortEntry = !bullTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
+  const shortEntry = bearTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
   const longExit   = bearExhaust || bearDiv;
   const shortExit  = bullExhaust || bullDiv;
-  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,cur.volume>volMAn].filter(Boolean).length;
-  return { bullTrend,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit:longExit&&!longEntry,shortExit:shortExit&&!shortEntry,condScore,volMAn,volRatio:(cur.volume/volMAn)*100,e50,e200 };
+  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,aboveAvgVol].filter(Boolean).length;
+  return { bullTrend,bearTrend,trendState,vwap:vwap2,marketState,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit:longExit&&!longEntry,shortExit:shortExit&&!shortEntry,condScore,volMAn,volRatio:(cur.volume/volMAn)*100,e50,e200 };
 }
 
 // ═══════════════════════════════════════════
@@ -1659,7 +1682,14 @@ function runIndicators() {
   }
   S._prevBarCount = n;
 
-  const bullTrend = e50[n-1] > e200[n-1];
+  // ── Session VWAP (reset on day change) ───────────────────────
+  const vwapArr=calcSessionVWAP(bars);
+  const vwap=vwapArr[n-1];
+  S._vwap=vwapArr;
+  // ── 3-state trend (Pine v6: BULL/BEAR/RANGE) ─────────────────
+  const bullTrend = e50[n-1]>e200[n-1] && cur.close>vwap;
+  const bearTrend = e50[n-1]<e200[n-1] && cur.close<vwap;
+  const trendState = bullTrend?'BULL':bearTrend?'BEAR':'RANGE';
   const volMA = sma(vols, length), volMAn = volMA[n-1] || 1;
   const volRatio = (cur.volume / volMAn) * 100;
   const bodyMA = sma(bodies, 20), bodyMAn = bodyMA[n-1] || 1;
@@ -1668,27 +1698,43 @@ function runIndicators() {
   const htfMAv = S.htfVols.slice(-length).reduce((a,b)=>a+b,0) / Math.min(S.htfVols.length, length);
   const htfVol = S.htfVols[S.htfVols.length-1];
   const htfSpike = htfVol > htfMAv * spikeMult;
+  // ── Session CVD (reset on day change) ────────────────────────
+  let cvdCum=0, cvdDay=-1; const cvdArr=[];
+  for(const bar of bars){
+    const day=Math.floor(bar.time/86400000);
+    if(day!==cvdDay && cvdDay!==-1)cvdCum=0;
+    cvdDay=day; cvdCum+=bar.delta; cvdArr.push(cvdCum);
+  }
+  const sessionCVD=cvdArr[n-1];
+  S._cvdArr=cvdArr;
+  // ── Bar imbalance (normalized delta [-1,+1]) ──────────────────
+  const imbalance=cur.volume>0?cur.delta/cur.volume:0;
   const buyVols = bars.map(b=>b.buyVol), sellVols = bars.map(b=>b.sellVol);
-  const hasPivotLow  = n>10 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
-  const hasPivotHigh = n>10 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
-  const bullDiv = hasPivotLow  && cur.buyVol  > (buyVols[n-7]||0);
-  const bearDiv = hasPivotHigh && cur.sellVol > (sellVols[n-7]||0);
-  const absorption    = cur.volume > volMAn*1.8 && cur.body < bodyMAn*0.5;
-  const hiddenAccum   = cur.buyVol > cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
-  const hiddenDistrib = cur.sellVol > cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
-  const bullExhaust   = cur.delta>0 && n>1 && cur.close<=bars[n-2].close && cur.body<bodyMAn;
-  const bearExhaust   = cur.delta<0 && n>1 && cur.close>=bars[n-2].close && cur.body<bodyMAn;
+  const hasPivotLow  = n>11 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
+  const hasPivotHigh = n>11 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
+  // ── Updated divergence (Pine v6: price extreme + delta improves) ─
+  const bullDiv = hasPivotLow  && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
+  const bearDiv = hasPivotHigh && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
+  const absorption    = cur.volume>volMAn*1.8 && cur.body<bodyMAn*0.5;
+  const hiddenAccum   = cur.buyVol>cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
+  const hiddenDistrib = cur.sellVol>cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
+  const aboveAvgVol   = cur.volume>volMAn;
+  // ── Tighter exhaustion (Pine v6: requires close direction + above-avg vol) ─
+  const bullExhaust   = cur.delta>0 && n>1 && cur.close<cur.open && cur.close<=bars[n-2].close && cur.body<bodyMAn && aboveAvgVol;
+  const bearExhaust   = cur.delta<0 && n>1 && cur.close>cur.open && cur.close>=bars[n-2].close && cur.body<bodyMAn && aboveAvgVol;
+  // ── Market state rollup ───────────────────────────────────────
+  const marketState   = absorption?'ABSORB':hiddenAccum?'ACCUM':hiddenDistrib?'DISTR':'—';
   const totalCum = S.cumBuy + S.cumSell;
   const dominance = totalCum ? (S.cumBuy/totalCum*100) : 50;
   const longEntry  = bullTrend && htfSpike && (bullDiv||hiddenAccum) && !bullExhaust;
-  const shortEntry = !bullTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
+  const shortEntry = bearTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
   const longExit   = bearExhaust || bearDiv;
   const shortExit  = bullExhaust || bullDiv;
-  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,cur.volume>volMAn].filter(Boolean).length;
+  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,aboveAvgVol].filter(Boolean).length;
   cur.longEntry=longEntry; cur.shortEntry=shortEntry;
   cur.longExit=longExit&&!longEntry; cur.shortExit=shortExit&&!shortEntry;
   S._e50=e50; S._e200=e200; S._volMA=volMA;
-  const ind = { e50,e200,bullTrend,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore };
+  const ind = { e50,e200,bullTrend,bearTrend,trendState,vwap,sessionCVD,imbalance,marketState,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore };
   S.lastInd = ind;
   updateLeftPanel(ind, cur);
   updatePnL(ind, cur);
@@ -1727,8 +1773,8 @@ function runIndicators() {
   }
   
   // Update condition tooltips with exact values
-  document.getElementById('c0tip').textContent = 
-    `EMA50: ${(S._e50[S._e50.length-1] || 0).toFixed(2)} > EMA200: ${(S._e200[S._e200.length-1] || 0).toFixed(2)}`;
+  document.getElementById('c0tip').textContent =
+    `EMA50: ${(S._e50[S._e50.length-1]||0).toFixed(2)} > EMA200: ${(S._e200[S._e200.length-1]||0).toFixed(2)} | VWAP: ${fmtPx(ind.vwap,S.currentTicker)} (${cur.close>ind.vwap?'above':'below'})`;
   document.getElementById('c1tip').textContent = 
     `HTF Vol: ${fmt(htfVol)} > Avg × ${S.settings.spikeMult.toFixed(1)}`;
   document.getElementById('c2tip').textContent = 
@@ -1755,7 +1801,7 @@ function updateLeftPanel(ind, cur) {
   else { box.classList.add('wait');val.classList.add('wait');val.textContent=ind.longExit?'EXIT ↑':ind.shortExit?'EXIT ↓':'WAIT'; note.textContent=ind.longExit||ind.shortExit?'EXIT SIGNAL DETECTED':`${ind.condScore}/5 CONDITIONS MET`; }
   // ── Condition Detail Panel ──────────────────────────────────
   const condItems=[
-    {label:'Bull Trend (EMA50>200)',hit:ind.bullTrend,warn:!ind.bullTrend},
+    {label:'Bull Trend (EMA50>200 + close>VWAP)',hit:ind.bullTrend,warn:!ind.bullTrend},
     {label:'HTF Volume Spike',hit:ind.htfSpike,warn:false},
     {label:'Divergence / Accumulation',hit:ind.bullDiv||ind.hiddenAccum,warn:false},
     {label:'No Bull Exhaustion',hit:!ind.bullExhaust,warn:ind.bullExhaust},
@@ -1776,8 +1822,9 @@ function updateLeftPanel(ind, cur) {
   document.getElementById('scoreNum').textContent=ind.condScore+'/5';
   const sf=document.getElementById('scoreFill'); sf.style.width=fillPct+'%';
   sf.style.background=ind.condScore>=5?'var(--bull)':ind.condScore>=3?'var(--amber)':'var(--tx3)';
-  const tp=document.getElementById('trendPill'); tp.className='trend-pill '+(ind.bullTrend?'bull':'bear');
-  tp.textContent=ind.bullTrend?'▲  BULL TREND':'▼  BEAR TREND';
+  const tp=document.getElementById('trendPill');
+  tp.className='trend-pill '+(ind.trendState==='BULL'?'bull':ind.trendState==='BEAR'?'bear':'range');
+  tp.textContent=ind.trendState==='BULL'?'▲  BULL TREND':ind.trendState==='BEAR'?'▼  BEAR TREND':'◆  RANGING';
   const hv=document.getElementById('htfVal'); hv.className='htf-val '+(ind.htfSpike?'on':'off');
   hv.textContent=ind.htfSpike?'✅ SPIKE':'❌ NO';
   document.getElementById('spikeMultLbl').textContent=S.settings.spikeMult.toFixed(1);
@@ -1809,6 +1856,15 @@ function updateLeftPanel(ind, cur) {
   const ciC=document.getElementById('ciC'); ciC.textContent=fmtPx(cur2.close,S.currentTicker);
   ciC.style.color=cur2.close>=cur2.open?'var(--bull)':'var(--bear)';
   document.getElementById('ciV').textContent=fmt(cur2.volume);
+  // ── Pine v6 new metrics ───────────────────────────────────────
+  const imbEl=document.getElementById('mImbalance');
+  if(imbEl){ const pct=(ind.imbalance*100).toFixed(1); imbEl.textContent=(ind.imbalance>=0?'+':'')+pct+'%'; imbEl.className='mc-v '+(ind.imbalance>0.3?'bull':ind.imbalance<-0.3?'bear':'amber'); }
+  const cvdEl=document.getElementById('mCVD');
+  if(cvdEl){ cvdEl.textContent=(ind.sessionCVD>=0?'▲ ':' ▼')+fmt(Math.abs(ind.sessionCVD)); cvdEl.className='mc-v '+(ind.sessionCVD>=0?'bull':'bear'); }
+  const vwapEl=document.getElementById('vwapVal');
+  if(vwapEl && ind.vwap){ vwapEl.textContent=fmtPx(ind.vwap,S.currentTicker); vwapEl.className='htf-val '+(cur2.close>ind.vwap?'bull':'bear'); }
+  const mktEl=document.getElementById('mktStateVal');
+  if(mktEl){ const mc={ABSORB:'amber',ACCUM:'bull',DISTR:'bear','—':'off'}; mktEl.textContent=ind.marketState; mktEl.className='htf-val '+(mc[ind.marketState]||'off'); }
 }
 function setFlag2(rid,vid,val,isWarn){const el=document.getElementById(rid);el.className='flag-c'+(val?(isWarn?' warn':' on'):'');document.getElementById(vid).textContent=val?'TRUE':'FALSE';}
 
@@ -1964,6 +2020,7 @@ function setupCanvas(canvas) {
   }
   const ctx=canvas.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
   return [ctx,W,H];
 }
 // ── RAF render system ─────────────────────────────────────────
@@ -1984,218 +2041,488 @@ function drawAll(){
   drawVolChart();
 }
 
-function drawCandleChart() {
-  const cv=document.getElementById('priceCanvas'); const [ctx,W,H]=setupCanvas(cv);
-  const bars=S.bars; if(!bars.length)return;
-  const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=getVisibleBars(); const vn=visible.length; if(!vn)return;
-  const PAD={l:6,r:68,t:16,b:20}; const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
-  const pxMax=Math.max(...visible.map(b=>b.high))*1.002, pxMin=Math.min(...visible.map(b=>b.low))*0.998;
-  const pRange=pxMax-pxMin; const toY=p=>PAD.t+cH*(1-(p-pxMin)/pRange); const bW=cW/vn;
-  // grid
-  for(let i=0;i<=5;i++){const gy=PAD.t+cH*i/5;ctx.strokeStyle='rgba(31,42,62,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.5)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmtPx(pxMax-pRange*i/5,S.currentTicker),W-PAD.r+4,gy+3);}
-  // EMA
-  if(S._e50&&S._e50.length>=bars.length){[{d:S._e50.slice(-vn),c:'rgba(245,166,35,.7)',lw:1.2},{d:(S._e200||[]).slice(-vn),c:'rgba(74,124,220,.7)',lw:1.5}].forEach(({d,c,lw})=>{if(!d.length)return;ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=lw;d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();});}
-  // candles
-  visible.forEach((bar,i)=>{
-    // Focus engine: fade distant bars when focus mode is on
-    if(S.focusMode){const dist=Math.abs(i-(vn-1));ctx.globalAlpha=Math.max(0.15,1-dist*0.045);}
-    const x=PAD.l+(i+.5)*bW, bw2=Math.max(1,bW*.4), bull=bar.close>=bar.open;
-    const bodyTop=toY(Math.max(bar.open,bar.close)), bodyBot=toY(Math.min(bar.open,bar.close)), bodyH=Math.max(1,bodyBot-bodyTop);
-    ctx.strokeStyle=bull?'rgba(34,214,142,.8)':'rgba(240,73,104,.8)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(x,toY(bar.high));ctx.lineTo(x,toY(bar.low));ctx.stroke();
-    ctx.fillStyle=bull?'rgba(34,214,142,.8)':'rgba(240,73,104,.8)';
-    ctx.fillRect(x-bw2,bodyTop,bw2*2,bodyH);
-    // Zoom-adaptive delta labels (only visible at high zoom + wide bars)
-    if(S.zoomLevel>1.8&&bW>12&&bodyH>10){
-      ctx.fillStyle='rgba(255,255,255,.55)';
-      ctx.font="6px 'JetBrains Mono'";
-      ctx.textAlign='center';
-      ctx.fillText((bar.delta>=0?'+':'')+fmt(bar.delta),x,(bodyTop+bodyBot)/2+2);
-    }
-    // signals — always full opacity regardless of focus mode
-    const prevAlpha=ctx.globalAlpha;ctx.globalAlpha=1;
-    if(bar.longEntry){const ay=toY(bar.low)+12;ctx.fillStyle='#22d68e';ctx.shadowBlur=10;ctx.shadowColor='#22d68e';ctx.beginPath();ctx.moveTo(x,ay-8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
-    if(bar.shortEntry){const ay=toY(bar.high)-12;ctx.fillStyle='#f04968';ctx.shadowBlur=10;ctx.shadowColor='#f04968';ctx.beginPath();ctx.moveTo(x,ay+8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
-    if(bar.longExit||bar.shortExit){const ay=bar.longExit?toY(bar.high)-6:toY(bar.low)+6;ctx.fillStyle='#f5a623';ctx.shadowBlur=6;ctx.shadowColor='#f5a623';ctx.beginPath();ctx.arc(x,ay,3,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;}
-    ctx.globalAlpha=prevAlpha;
-  });
-  ctx.globalAlpha=1;
-  // Alert price lines
-  drawAlertLines(ctx, toY, PAD, W, H);
-  // Price line
-  const last=visible[vn-1], cpY=toY(last.close);
-  ctx.strokeStyle=last.close>=last.open?'rgba(34,214,142,.4)':'rgba(240,73,104,.4)';ctx.lineWidth=1;ctx.setLineDash([3,4]);
-  ctx.beginPath();ctx.moveTo(PAD.l,cpY);ctx.lineTo(W-PAD.r,cpY);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle=last.close>=last.open?'var(--bull)':'var(--bear)';
-  ctx.fillRect(W-PAD.r,cpY-8,64,16);ctx.fillStyle='#fff';ctx.font="bold 9px 'JetBrains Mono'";ctx.textAlign='center';
-  ctx.fillText(fmtPx(last.close,S.currentTicker),W-PAD.r+32,cpY+3);
+// ═══════════════════════════════════════════════════════════════
+// CHART ENGINE v2 — TradingView-style viewport + crosshair
+// ═══════════════════════════════════════════════════════════════
+
+// Shared chart padding (right = price scale, bottom = time axis)
+const CHART_PAD   = {l:4, r:72, t:12, b:28};
+const VOL_PAD     = {l:4, r:72, t:6,  b:4 };
+
+// Compute the viewport from current pan/zoom state.
+// Returns coord helpers: xOf(i), iOf(x), toY/toPrice set externally by caller.
+function getViewport(canvas, pad) {
+  const W = canvas.parentElement.clientWidth;
+  const H = canvas.parentElement.clientHeight;
+  const P = pad || CHART_PAD;
+  const cW = W - P.l - P.r, cH = H - P.t - P.b;
+  const bars = S.bars;
+  const vBars = Math.max(2, S.viewBars);
+  const vEnd  = S.viewEnd !== null ? S.viewEnd : bars.length;
+  const vStart = vEnd - vBars;
+  const bW = cW / vBars;
+  const xOf = i => P.l + (i + 0.5 - vStart) * bW;
+  const iOf = x => (x - P.l) / bW + vStart - 0.5;
+  const iStart = Math.max(0, Math.floor(vStart));
+  const iEnd   = Math.min(bars.length - 1, Math.ceil(vEnd) - 1);
+  return {W, H, P, cW, cH, bW, vStart, vEnd, vBars, iStart, iEnd, xOf, iOf};
 }
 
-// ══════════════════════════════════════════════════════════════
-// ORDER FLOW CHART — footprint-style imbalance visualization
-// Shows faded candles with delta-colored cells and bid/ask split
-// bars. Imbalance >3:1 ratio gets an amber marker.
-// ══════════════════════════════════════════════════════════════
-function drawFlowChart() {
-  const cv=document.getElementById('priceCanvas');
-  const [ctx,W,H]=setupCanvas(cv);
-  const bars=S.bars; if(!bars.length)return;
-  const visible=getVisibleBars(); const vn=visible.length; if(!vn)return;
-  const PAD={l:6,r:68,t:16,b:20};
-  const cW=W-PAD.l-PAD.r, cH=H-PAD.t-PAD.b;
-  const pxMax=Math.max(...visible.map(b=>b.high))*1.002;
-  const pxMin=Math.min(...visible.map(b=>b.low))*0.998;
-  const pRange=pxMax-pxMin;
-  const toY=p=>PAD.t+cH*(1-(p-pxMin)/pRange);
-  const bW=cW/vn;
+// "Nice" price ticks for the y-axis  (returns array of price values)
+function nicePriceTicks(lo, hi, count) {
+  if (hi <= lo) return [];
+  const range = hi - lo;
+  const rawStep = range / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const step = mag * [1,2,2.5,5,10].find(s => s * mag >= rawStep) || rawStep;
+  const ticks = [];
+  for (let v = Math.ceil(lo / step) * step; v < hi + step * 0.01; v = parseFloat((v + step).toPrecision(12)))
+    ticks.push(v);
+  return ticks;
+}
 
-  // grid
-  for(let i=0;i<=5;i++){
-    const gy=PAD.t+cH*i/5;
-    ctx.strokeStyle='rgba(31,42,62,.45)';ctx.lineWidth=.5;
-    ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();
-    ctx.fillStyle='rgba(107,132,168,.5)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';
-    ctx.fillText(fmtPx(pxMax-pRange*i/5,S.currentTicker),W-PAD.r+4,gy+3);
+// Thin time label for a bar (adapts to TF)
+function fmtBarTime(ts, tf) {
+  const d = new Date(ts);
+  if (tf === '1d') return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  if (tf === '4h'||tf === '1h') {
+    if (d.getHours()===0&&d.getMinutes()===0)
+      return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
   }
+  return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+}
 
-  // EMA lines (subtle)
-  if(S._e50&&S._e50.length>=bars.length){
-    [{d:S._e50.slice(-vn),c:'rgba(245,166,35,.35)',lw:1},{d:(S._e200||[]).slice(-vn),c:'rgba(74,124,220,.35)',lw:1}].forEach(({d,c,lw})=>{
-      if(!d.length)return;ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=lw;
-      d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();
+// Draw time axis at the bottom of a chart
+function drawTimeAxis(ctx, vp, bars, tf) {
+  const {W, H, P, bW} = vp;
+  const axY = H - P.b + 2;
+  ctx.font = "8px 'JetBrains Mono'";
+  ctx.fillStyle = 'rgba(107,132,168,.6)';
+  ctx.textAlign = 'center';
+  const minSpacing = 68, step = Math.max(1, Math.ceil(minSpacing / bW));
+  const base = Math.floor(vp.vStart / step) * step;
+  let lastLbl = '';
+  for (let i = base; i <= vp.iEnd; i += step) {
+    if (i < 0 || i >= bars.length) continue;
+    const x = vp.xOf(i);
+    if (x < P.l + 10 || x > W - P.r - 10) continue;
+    const lbl = fmtBarTime(bars[i].time, tf);
+    if (lbl === lastLbl) continue;
+    lastLbl = lbl;
+    ctx.strokeStyle = 'rgba(107,132,168,.2)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(x, H - P.b); ctx.lineTo(x, H - P.b + 3); ctx.stroke();
+    ctx.fillText(lbl, x, axY + 9);
+  }
+}
+
+// Draw horizontal price grid + right-side price labels
+function drawPriceGrid(ctx, vp, ticks, fmtFn) {
+  const {W, P, cH} = vp;
+  ctx.font = "8px 'JetBrains Mono'";
+  ctx.textAlign = 'left';
+  ticks.forEach(p => {
+    const y = vp._toY(p);
+    if (y < P.t || y > P.t + cH) return;
+    ctx.strokeStyle = 'rgba(31,42,62,.55)'; ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W - P.r, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(107,132,168,.65)';
+    ctx.fillText(fmtFn(p), W - P.r + 5, y + 3);
+  });
+}
+
+// Draw crosshair + price label on right axis + time label on bottom axis
+function drawCrosshair(ctx, vp, bars, tf) {
+  if (S._crossX == null) return;
+  const {W, H, P, cH} = vp;
+  const mx = S._crossX, my = S._crossY;
+  if (mx < P.l || mx > W - P.r || my < P.t || my > P.t + cH) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,180,220,.35)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(mx, P.t); ctx.lineTo(mx, P.t + cH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(P.l, my); ctx.lineTo(W - P.r, my); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // price label (right)
+  const price = vp._toPrice(my);
+  const pStr = fmtPx(price, S.currentTicker);
+  ctx.font = "bold 9px 'JetBrains Mono'";
+  ctx.fillStyle = 'rgba(30,45,68,.97)';
+  ctx.fillRect(W - P.r, my - 9, P.r - 1, 18);
+  ctx.strokeStyle = 'rgba(0,196,160,.5)'; ctx.lineWidth = 1;
+  ctx.strokeRect(W - P.r, my - 9, P.r - 1, 18);
+  ctx.fillStyle = '#c8d9ef'; ctx.textAlign = 'center';
+  ctx.fillText(pStr, W - P.r + (P.r - 1) / 2, my + 3);
+
+  // time label (bottom)
+  const bi = Math.round(vp.iOf(mx));
+  if (bi >= 0 && bi < bars.length) {
+    const tStr = fmtBarTime(bars[bi].time, tf);
+    ctx.font = "8px 'JetBrains Mono'";
+    const tw = ctx.measureText(tStr).width + 14;
+    ctx.fillStyle = 'rgba(30,45,68,.97)';
+    ctx.fillRect(mx - tw/2, H - P.b, tw, P.b - 1);
+    ctx.strokeStyle = 'rgba(0,196,160,.5)'; ctx.lineWidth = 1;
+    ctx.strokeRect(mx - tw/2, H - P.b, tw, P.b - 1);
+    ctx.fillStyle = '#c8d9ef'; ctx.textAlign = 'center';
+    ctx.fillText(tStr, mx, H - P.b + 10);
+  }
+  ctx.restore();
+}
+
+// Draw signal markers (triangles for entries, dots for exits)
+function drawSignals(ctx, bar, x, toY) {
+  if (bar.longEntry) {
+    const ay = toY(bar.low) + 14;
+    ctx.fillStyle = '#22d68e'; ctx.shadowBlur = 10; ctx.shadowColor = '#22d68e';
+    ctx.beginPath(); ctx.moveTo(x, ay-9); ctx.lineTo(x-5.5, ay); ctx.lineTo(x+5.5, ay);
+    ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+  }
+  if (bar.shortEntry) {
+    const ay = toY(bar.high) - 14;
+    ctx.fillStyle = '#f04968'; ctx.shadowBlur = 10; ctx.shadowColor = '#f04968';
+    ctx.beginPath(); ctx.moveTo(x, ay+9); ctx.lineTo(x-5.5, ay); ctx.lineTo(x+5.5, ay);
+    ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+  }
+  if (bar.longExit || bar.shortExit) {
+    const ay = bar.longExit ? toY(bar.high) - 7 : toY(bar.low) + 7;
+    ctx.fillStyle = '#f5a623'; ctx.shadowBlur = 6; ctx.shadowColor = '#f5a623';
+    ctx.beginPath(); ctx.arc(x, ay, 3, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+  }
+}
+
+// ── Draw current-price label on the right axis ────────────────
+function drawPriceLabel(ctx, vp, bar) {
+  const {W, P} = vp;
+  const cpY = vp._toY(bar.close);
+  const bull = bar.close >= bar.open;
+  const col = bull ? 'rgba(34,214,142,1)' : 'rgba(240,73,104,1)';
+  ctx.strokeStyle = bull ? 'rgba(34,214,142,.4)' : 'rgba(240,73,104,.4)';
+  ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(P.l, cpY); ctx.lineTo(W - P.r, cpY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = col;
+  ctx.fillRect(W - P.r, cpY - 9, P.r - 1, 18);
+  ctx.fillStyle = '#0a0f1a'; ctx.font = "bold 9px 'JetBrains Mono'"; ctx.textAlign = 'center';
+  ctx.fillText(fmtPx(bar.close, S.currentTicker), W - P.r + (P.r-1)/2, cpY + 3);
+}
+
+// ── Draw EMA + VWAP overlays using bar-index coordinates ──────
+function drawOverlays(ctx, vp, toY, subtle) {
+  const a = subtle ? 0.35 : 0.75;
+  if (S._e50 && S._e50.length) {
+    [[S._e50,'rgba(245,166,35,'+a+')',subtle?1:1.2],[S._e200,'rgba(74,124,220,'+a+')',subtle?1:1.5]]
+    .forEach(([d,c,lw]) => {
+      if (!d||!d.length) return;
+      ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = lw; let first = true;
+      for (let i = vp.iStart; i <= vp.iEnd; i++) {
+        const v = d[i]; if (v == null) continue;
+        const x = vp.xOf(i), y = toY(v);
+        first ? ctx.moveTo(x,y) : ctx.lineTo(x,y); first = false;
+      }
+      ctx.stroke();
     });
   }
-
-  const maxDelta=Math.max(...visible.map(b=>Math.abs(b.delta)),1);
-
-  visible.forEach((bar,i)=>{
-    const x=PAD.l+(i+.5)*bW;
-    const bw2=Math.max(1,bW*.42);
-    const bull=bar.close>=bar.open;
-    const bodyTop=toY(Math.max(bar.open,bar.close));
-    const bodyBot=toY(Math.min(bar.open,bar.close));
-    const bodyH=Math.max(2,bodyBot-bodyTop);
-
-    // Faded wick
-    ctx.strokeStyle=bull?'rgba(34,214,142,.2)':'rgba(240,73,104,.2)';
-    ctx.lineWidth=.8;
-    ctx.beginPath();ctx.moveTo(x,toY(bar.high));ctx.lineTo(x,toY(bar.low));ctx.stroke();
-
-    // Faded candle outline
-    ctx.strokeStyle=bull?'rgba(34,214,142,.18)':'rgba(240,73,104,.18)';
-    ctx.lineWidth=.6;
-    ctx.strokeRect(x-bw2,bodyTop,bw2*2,bodyH);
-
-    // Delta intensity cell
-    const di=Math.abs(bar.delta)/maxDelta;
-    const buyRatio=bar.buyVol/(bar.buyVol+bar.sellVol+0.001);
-    const isImbalance=(bar.buyVol>0&&bar.sellVol>0)&&(bar.buyVol/bar.sellVol>3||bar.sellVol/bar.buyVol>3);
-
-    let r,g,b;
-    if(isImbalance){r=245;g=166;b=35;}
-    else if(bar.delta>=0){r=34;g=214;b=142;}
-    else{r=240;g=73;b=104;}
-    ctx.fillStyle=`rgba(${r},${g},${b},${0.18+di*0.52})`;
-    ctx.fillRect(x-bw2,bodyTop,bw2*2,bodyH);
-
-    // Buy/sell split bar at the bottom of the body
-    const splitH=Math.max(3,bw2*0.6);
-    const splitY=bodyBot-splitH;
-    if(bw2*2>3){
-      ctx.fillStyle='rgba(34,214,142,.85)';
-      ctx.fillRect(x-bw2,splitY,(bw2*2)*buyRatio,splitH);
-      ctx.fillStyle='rgba(240,73,104,.85)';
-      ctx.fillRect(x-bw2+(bw2*2)*buyRatio,splitY,(bw2*2)*(1-buyRatio),splitH);
+  if (S._vwap && S._vwap.length) {
+    ctx.beginPath(); ctx.strokeStyle = `rgba(0,196,160,${subtle?.6:.85})`; ctx.lineWidth = 1.2; ctx.setLineDash([4,3]);
+    let first = true;
+    for (let i = vp.iStart; i <= vp.iEnd; i++) {
+      const v = S._vwap[i]; if (v == null) continue;
+      const x = vp.xOf(i), y = toY(v);
+      first ? ctx.moveTo(x,y) : ctx.lineTo(x,y); first = false;
     }
-
-    // Imbalance glow marker
-    if(isImbalance){
-      const markerY=bar.delta>0?toY(bar.high)-6:toY(bar.low)+6;
-      ctx.fillStyle='rgba(245,166,35,.95)';
-      ctx.shadowBlur=8;ctx.shadowColor='rgba(245,166,35,.7)';
-      ctx.beginPath();ctx.arc(x,markerY,2.5,0,Math.PI*2);ctx.fill();
-      ctx.shadowBlur=0;
+    ctx.stroke(); ctx.setLineDash([]);
+    const lv = S._vwap[vp.iEnd];
+    if (lv != null) {
+      const {W,P,cH} = vp;
+      const ly = Math.max(P.t+8, Math.min(P.t+cH-4, toY(lv)));
+      ctx.fillStyle = `rgba(0,196,160,${subtle?.6:.75})`; ctx.font = "7px 'JetBrains Mono'"; ctx.textAlign = 'left';
+      ctx.fillText('VWAP '+fmtPx(lv,S.currentTicker), W-P.r+5, ly+3);
     }
-
-    // Zoom-adaptive footprint labels (ratio text at high zoom)
-    if(S.zoomLevel>2.0&&bW>14&&bodyH>12){
-      const ratioTxt=bar.buyVol>bar.sellVol
-        ? `${(bar.buyVol/bar.sellVol).toFixed(1)}×B`
-        : `${(bar.sellVol/bar.buyVol).toFixed(1)}×S`;
-      ctx.fillStyle='rgba(255,255,255,.5)';
-      ctx.font="6px 'JetBrains Mono'";ctx.textAlign='center';
-      ctx.fillText(ratioTxt,x,(bodyTop+bodyBot)/2+2);
-    }
-
-    // Signal markers
-    if(bar.longEntry){const ay=toY(bar.low)+12;ctx.fillStyle='#22d68e';ctx.shadowBlur=10;ctx.shadowColor='#22d68e';ctx.beginPath();ctx.moveTo(x,ay-8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
-    if(bar.shortEntry){const ay=toY(bar.high)-12;ctx.fillStyle='#f04968';ctx.shadowBlur=10;ctx.shadowColor='#f04968';ctx.beginPath();ctx.moveTo(x,ay+8);ctx.lineTo(x-5,ay);ctx.lineTo(x+5,ay);ctx.closePath();ctx.fill();ctx.shadowBlur=0;}
-  });
-
-  // Alert lines
-  drawAlertLines(ctx,toY,PAD,W,H);
-
-  // Current price label
-  const last=visible[vn-1], cpY=toY(last.close);
-  ctx.strokeStyle=last.close>=last.open?'rgba(34,214,142,.4)':'rgba(240,73,104,.4)';
-  ctx.lineWidth=1;ctx.setLineDash([3,4]);
-  ctx.beginPath();ctx.moveTo(PAD.l,cpY);ctx.lineTo(W-PAD.r,cpY);ctx.stroke();ctx.setLineDash([]);
-  ctx.fillStyle=last.close>=last.open?'var(--bull)':'var(--bear)';
-  ctx.fillRect(W-PAD.r,cpY-8,64,16);
-  ctx.fillStyle='#fff';ctx.font="bold 9px 'JetBrains Mono'";ctx.textAlign='center';
-  ctx.fillText(fmtPx(last.close,S.currentTicker),W-PAD.r+32,cpY+3);
+  }
 }
 
+// ── CANDLE CHART ─────────────────────────────────────────────
+function drawCandleChart() {
+  const cv = document.getElementById('priceCanvas');
+  const [ctx, W, H] = setupCanvas(cv);
+  const bars = S.bars; if (!bars.length) return;
+  const vp = getViewport(cv, CHART_PAD);
+  if (vp.iStart > vp.iEnd) return;
+  const P = CHART_PAD, {cW, cH, bW} = vp;
+
+  // Price scale
+  const slice = bars.slice(vp.iStart, vp.iEnd + 1);
+  const hi = Math.max(...slice.map(b=>b.high)), lo = Math.min(...slice.map(b=>b.low));
+  const pad = (hi - lo) * 0.06 || hi * 0.001;
+  const pxMax = hi + pad, pxMin = lo - pad, pRange = pxMax - pxMin;
+  const toY = p => P.t + cH * (1 - (p - pxMin) / pRange);
+  const toPrice = y => pxMin + (1 - (y - P.t) / cH) * pRange;
+  vp._toY = toY; vp._toPrice = toPrice;
+
+  // Grid + axes
+  drawPriceGrid(ctx, vp, nicePriceTicks(pxMin, pxMax, 6), p => fmtPx(p, S.currentTicker));
+  drawTimeAxis(ctx, vp, bars, S.currentTF);
+
+  // Overlays (EMA, VWAP)
+  drawOverlays(ctx, vp, toY, false);
+
+  // Candles
+  const bw2 = Math.max(0.5, bW * 0.44);
+  for (let i = vp.iStart; i <= vp.iEnd; i++) {
+    const bar = bars[i], x = vp.xOf(i);
+    const bull = bar.close >= bar.open;
+    const col  = bull ? 'rgba(34,214,142,.85)' : 'rgba(240,73,104,.85)';
+    const bodyTop = toY(Math.max(bar.open, bar.close));
+    const bodyBot = toY(Math.min(bar.open, bar.close));
+    const bodyH   = Math.max(1, bodyBot - bodyTop);
+
+    // Focus mode: fade distant bars
+    if (S.focusMode) ctx.globalAlpha = Math.max(.15, 1 - Math.abs(i - vp.iEnd) * 0.04);
+
+    ctx.strokeStyle = col; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, toY(bar.high)); ctx.lineTo(x, toY(bar.low)); ctx.stroke();
+    ctx.fillStyle = col; ctx.fillRect(x - bw2, bodyTop, bw2*2, bodyH);
+
+    if (bW > 18 && bodyH > 10) { // delta label at wide zoom
+      ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(255,255,255,.5)';
+      ctx.font = "6px 'JetBrains Mono'"; ctx.textAlign = 'center';
+      ctx.fillText((bar.delta>=0?'+':'')+fmt(bar.delta), x, (bodyTop+bodyBot)/2+2);
+    }
+    ctx.globalAlpha = 1;
+    drawSignals(ctx, bar, x, toY);
+  }
+
+  drawAlertLines(ctx, toY, P, W, H);
+  drawPriceLabel(ctx, vp, bars[vp.iEnd]);
+  drawCrosshair(ctx, vp, bars, S.currentTF);
+}
+
+// ── ORDER FLOW CHART ─────────────────────────────────────────
+function drawFlowChart() {
+  const cv = document.getElementById('priceCanvas');
+  const [ctx, W, H] = setupCanvas(cv);
+  const bars = S.bars; if (!bars.length) return;
+  const vp = getViewport(cv, CHART_PAD);
+  if (vp.iStart > vp.iEnd) return;
+  const P = CHART_PAD, {cW, cH, bW} = vp;
+
+  const slice = bars.slice(vp.iStart, vp.iEnd + 1);
+  const hi = Math.max(...slice.map(b=>b.high)), lo = Math.min(...slice.map(b=>b.low));
+  const pad = (hi - lo) * 0.06 || hi * 0.001;
+  const pxMax = hi + pad, pxMin = lo - pad, pRange = pxMax - pxMin;
+  const toY = p => P.t + cH * (1 - (p - pxMin) / pRange);
+  const toPrice = y => pxMin + (1 - (y - P.t) / cH) * pRange;
+  vp._toY = toY; vp._toPrice = toPrice;
+
+  drawPriceGrid(ctx, vp, nicePriceTicks(pxMin, pxMax, 6), p => fmtPx(p, S.currentTicker));
+  drawTimeAxis(ctx, vp, bars, S.currentTF);
+  drawOverlays(ctx, vp, toY, true);
+
+  const maxDelta = Math.max(...slice.map(b => Math.abs(b.delta)), 1);
+  const bw2 = Math.max(0.5, bW * 0.44);
+
+  for (let i = vp.iStart; i <= vp.iEnd; i++) {
+    const bar = bars[i], x = vp.xOf(i);
+    const bull = bar.close >= bar.open;
+    const bodyTop = toY(Math.max(bar.open, bar.close));
+    const bodyBot = toY(Math.min(bar.open, bar.close));
+    const bodyH   = Math.max(2, bodyBot - bodyTop);
+
+    // Faded wick + outline
+    ctx.strokeStyle = bull ? 'rgba(34,214,142,.2)' : 'rgba(240,73,104,.2)'; ctx.lineWidth = .8;
+    ctx.beginPath(); ctx.moveTo(x, toY(bar.high)); ctx.lineTo(x, toY(bar.low)); ctx.stroke();
+    ctx.strokeStyle = bull ? 'rgba(34,214,142,.18)' : 'rgba(240,73,104,.18)'; ctx.lineWidth = .6;
+    ctx.strokeRect(x - bw2, bodyTop, bw2*2, bodyH);
+
+    // Delta intensity fill
+    const di = Math.abs(bar.delta) / maxDelta;
+    const buyRatio = bar.buyVol / (bar.buyVol + bar.sellVol + 0.001);
+    const isImb = (bar.buyVol > 0 && bar.sellVol > 0) &&
+                  (bar.buyVol / bar.sellVol > 3 || bar.sellVol / bar.buyVol > 3);
+    let fr = isImb ? 245 : bar.delta >= 0 ? 34  : 240;
+    let fg = isImb ? 166 : bar.delta >= 0 ? 214 : 73;
+    let fb = isImb ? 35  : bar.delta >= 0 ? 142 : 104;
+    ctx.fillStyle = `rgba(${fr},${fg},${fb},${0.18 + di * 0.52})`;
+    ctx.fillRect(x - bw2, bodyTop, bw2*2, bodyH);
+
+    // Buy/sell split bar
+    const splitH = Math.max(3, bw2 * 0.6), splitY = bodyBot - splitH;
+    if (bw2 * 2 > 3) {
+      ctx.fillStyle = 'rgba(34,214,142,.85)';  ctx.fillRect(x-bw2, splitY, bw2*2*buyRatio, splitH);
+      ctx.fillStyle = 'rgba(240,73,104,.85)';  ctx.fillRect(x-bw2+bw2*2*buyRatio, splitY, bw2*2*(1-buyRatio), splitH);
+    }
+
+    // Imbalance marker
+    if (isImb) {
+      const my = bar.delta > 0 ? toY(bar.high) - 6 : toY(bar.low) + 6;
+      ctx.fillStyle = 'rgba(245,166,35,.95)'; ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(245,166,35,.7)';
+      ctx.beginPath(); ctx.arc(x, my, 2.5, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+    }
+
+    // Footprint ratio label at wide zoom
+    if (bW > 16 && bodyH > 12) {
+      const rTxt = bar.buyVol > bar.sellVol
+        ? `${Math.min((bar.buyVol/bar.sellVol),99).toFixed(1)}×B`
+        : `${Math.min((bar.sellVol/bar.buyVol),99).toFixed(1)}×S`;
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = "6px 'JetBrains Mono'"; ctx.textAlign = 'center';
+      ctx.fillText(rTxt, x, (bodyTop+bodyBot)/2+2);
+    }
+
+    drawSignals(ctx, bar, x, toY);
+  }
+
+  drawAlertLines(ctx, toY, P, W, H);
+  drawPriceLabel(ctx, vp, bars[vp.iEnd]);
+  drawCrosshair(ctx, vp, bars, S.currentTF);
+}
+
+// ── DELTA CHART ──────────────────────────────────────────────
 function drawDeltaChart() {
-  const cv=document.getElementById('priceCanvas');const[ctx,W,H]=setupCanvas(cv);
-  const bars=S.bars;if(!bars.length)return;
-  const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
-  const PAD={l:6,r:68,t:16,b:20};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
-  const deltas=visible.map(b=>b.delta);const maxD=Math.max(...deltas.map(Math.abs))*1.1||1;
-  const zeroY=PAD.t+cH*.5;const toY=v=>zeroY-(v/maxD)*(cH/2);const bW=cW/vn;
-  for(let i=0;i<=4;i++){const gy=PAD.t+cH*i/4;ctx.strokeStyle='rgba(31,42,62,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmt(maxD*(1-2*(i/4))),W-PAD.r+4,gy+3);}
-  ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(PAD.l,zeroY);ctx.lineTo(W-PAD.r,zeroY);ctx.stroke();ctx.setLineDash([]);
-  visible.forEach((bar,i)=>{const x=PAD.l+i*bW,bw=Math.max(1,bW-1),y=toY(bar.delta);
-    if(bar.delta>=0){const g=ctx.createLinearGradient(0,y,0,zeroY);g.addColorStop(0,'rgba(34,214,142,.85)');g.addColorStop(1,'rgba(34,214,142,.15)');ctx.fillStyle=g;ctx.fillRect(x,y,bw,zeroY-y);}
-    else{const g=ctx.createLinearGradient(0,zeroY,0,y);g.addColorStop(0,'rgba(240,73,104,.15)');g.addColorStop(1,'rgba(240,73,104,.85)');ctx.fillStyle=g;ctx.fillRect(x,zeroY,bw,y-zeroY);}});
+  const cv = document.getElementById('priceCanvas');
+  const [ctx, W, H] = setupCanvas(cv);
+  const bars = S.bars; if (!bars.length) return;
+  const vp = getViewport(cv, CHART_PAD);
+  if (vp.iStart > vp.iEnd) return;
+  const P = CHART_PAD, {cW, cH, bW} = vp;
+
+  const slice = bars.slice(vp.iStart, vp.iEnd + 1);
+  const maxD = Math.max(...slice.map(b => Math.abs(b.delta))) * 1.1 || 1;
+  const zeroY = P.t + cH * 0.5;
+  const toY = v => zeroY - (v / maxD) * (cH / 2);
+  vp._toY = toY; vp._toPrice = v => -(v - zeroY) / (cH/2) * maxD;
+
+  // Grid lines
+  for (let i = 0; i <= 4; i++) {
+    const gy = P.t + cH * i / 4;
+    ctx.strokeStyle = 'rgba(31,42,62,.5)'; ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.moveTo(P.l, gy); ctx.lineTo(W - P.r, gy); ctx.stroke();
+    ctx.fillStyle = 'rgba(107,132,168,.5)'; ctx.font = "8px 'JetBrains Mono'"; ctx.textAlign = 'left';
+    ctx.fillText(fmt(maxD * (1 - 2*(i/4))), W - P.r + 5, gy + 3);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(P.l, zeroY); ctx.lineTo(W - P.r, zeroY); ctx.stroke(); ctx.setLineDash([]);
+  drawTimeAxis(ctx, vp, bars, S.currentTF);
+
+  // CVD overlay
+  if (S._cvdArr && S._cvdArr.length) {
+    const cvdMax = Math.max(...slice.map((_,j) => Math.abs(S._cvdArr[vp.iStart+j]||0))) * 1.1 || 1;
+    const cvdY = v => zeroY - (v / cvdMax) * (cH / 2);
+    ctx.beginPath(); ctx.lineWidth = 1.5; let first = true;
+    for (let i = vp.iStart; i <= vp.iEnd; i++) {
+      const v = S._cvdArr[i]; if (v == null) continue;
+      const x = vp.xOf(i); first ? ctx.moveTo(x, cvdY(v)) : ctx.lineTo(x, cvdY(v)); first = false;
+    }
+    ctx.strokeStyle = 'rgba(0,196,160,.7)'; ctx.stroke();
+    const lv = S._cvdArr[vp.iEnd];
+    if (lv != null) { ctx.fillStyle='rgba(0,196,160,.75)'; ctx.font="7px 'JetBrains Mono'"; ctx.textAlign='left'; ctx.fillText('CVD '+fmt(lv), W-P.r+5, cvdY(lv)+3); }
+  }
+
+  // Delta bars
+  for (let i = vp.iStart; i <= vp.iEnd; i++) {
+    const bar = bars[i], x = vp.xOf(i), bw = Math.max(1, bW - 1), y = toY(bar.delta);
+    if (bar.delta >= 0) {
+      const g = ctx.createLinearGradient(0,y,0,zeroY); g.addColorStop(0,'rgba(34,214,142,.85)'); g.addColorStop(1,'rgba(34,214,142,.15)');
+      ctx.fillStyle = g; ctx.fillRect(x - bw/2, y, bw, zeroY - y);
+    } else {
+      const g = ctx.createLinearGradient(0,zeroY,0,y); g.addColorStop(0,'rgba(240,73,104,.15)'); g.addColorStop(1,'rgba(240,73,104,.85)');
+      ctx.fillStyle = g; ctx.fillRect(x - bw/2, zeroY, bw, y - zeroY);
+    }
+  }
+  drawCrosshair(ctx, vp, bars, S.currentTF);
 }
 
+// ── DOMINANCE CHART ──────────────────────────────────────────
 function drawDomChart() {
-  const cv=document.getElementById('priceCanvas');const[ctx,W,H]=setupCanvas(cv);
-  const bars=S.bars;if(!bars.length)return;
-  const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
-  const PAD={l:6,r:68,t:16,b:20};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
-  let cB=0,cSv=0;const doms=visible.map(b=>{cB+=b.buyDol;cSv+=b.sellDol;return(cB+cSv)?(cB/(cB+cSv)*100):50;});
-  for(let i=0;i<=4;i++){const gy=PAD.t+cH*i/4;ctx.strokeStyle='rgba(31,42,62,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText((100-i*25)+'%',W-PAD.r+4,gy+3);}
-  const midY=PAD.t+cH*.5;ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(PAD.l,midY);ctx.lineTo(W-PAD.r,midY);ctx.stroke();ctx.setLineDash([]);
-  const bW=cW/vn;const area=ctx.createLinearGradient(0,PAD.t,0,PAD.t+cH);
-  area.addColorStop(0,'rgba(34,214,142,.25)');area.addColorStop(.5,'rgba(34,214,142,.04)');area.addColorStop(.5,'rgba(240,73,104,.04)');area.addColorStop(1,'rgba(240,73,104,.25)');
-  ctx.beginPath();doms.forEach((d,i)=>{const x=PAD.l+(i+.5)*bW,y=PAD.t+cH*(1-d/100);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  doms.slice().reverse().forEach((d,i)=>{const ri=vn-1-i,x=PAD.l+(ri+.5)*bW;ctx.lineTo(x,PAD.t+cH);});
-  ctx.closePath();ctx.fillStyle=area;ctx.fill();
-  ctx.beginPath();doms.forEach((d,i)=>{const x=PAD.l+(i+.5)*bW,y=PAD.t+cH*(1-d/100);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  ctx.strokeStyle='rgba(0,196,160,.8)';ctx.lineWidth=1.5;ctx.stroke();
+  const cv = document.getElementById('priceCanvas');
+  const [ctx, W, H] = setupCanvas(cv);
+  const bars = S.bars; if (!bars.length) return;
+  const vp = getViewport(cv, CHART_PAD);
+  if (vp.iStart > vp.iEnd) return;
+  const P = CHART_PAD, {cW, cH, bW} = vp;
+
+  const toY = d => P.t + cH * (1 - d / 100);
+  vp._toY = toY; vp._toPrice = y => (1 - (y - P.t) / cH) * 100;
+
+  // Accumulate running buy/sell sums from bar 0 up to vEnd for accuracy
+  let cB = 0, cSv = 0;
+  for (let i = 0; i < vp.iStart; i++) { cB += bars[i].buyDol; cSv += bars[i].sellDol; }
+  const doms = [];
+  for (let i = vp.iStart; i <= vp.iEnd; i++) {
+    cB += bars[i].buyDol; cSv += bars[i].sellDol;
+    doms.push((cB + cSv) ? cB / (cB + cSv) * 100 : 50);
+  }
+
+  for (let i = 0; i <= 4; i++) {
+    const gy = P.t + cH * i / 4;
+    ctx.strokeStyle = 'rgba(31,42,62,.5)'; ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.moveTo(P.l, gy); ctx.lineTo(W - P.r, gy); ctx.stroke();
+    ctx.fillStyle = 'rgba(107,132,168,.5)'; ctx.font = "8px 'JetBrains Mono'"; ctx.textAlign = 'left';
+    ctx.fillText((100 - i*25) + '%', W - P.r + 5, gy + 3);
+  }
+  const midY = P.t + cH * .5;
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(P.l, midY); ctx.lineTo(W - P.r, midY); ctx.stroke(); ctx.setLineDash([]);
+  drawTimeAxis(ctx, vp, bars, S.currentTF);
+
+  const area = ctx.createLinearGradient(0, P.t, 0, P.t + cH);
+  area.addColorStop(0,'rgba(34,214,142,.25)'); area.addColorStop(.5,'rgba(34,214,142,.04)');
+  area.addColorStop(.5,'rgba(240,73,104,.04)'); area.addColorStop(1,'rgba(240,73,104,.25)');
+  ctx.beginPath();
+  doms.forEach((d,j) => { const x=vp.xOf(vp.iStart+j),y=toY(d); j===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  doms.slice().reverse().forEach((d,j) => { const ri=doms.length-1-j; ctx.lineTo(vp.xOf(vp.iStart+ri), P.t+cH); });
+  ctx.closePath(); ctx.fillStyle = area; ctx.fill();
+  ctx.beginPath();
+  doms.forEach((d,j) => { const x=vp.xOf(vp.iStart+j),y=toY(d); j===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.strokeStyle = 'rgba(0,196,160,.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+  drawCrosshair(ctx, vp, bars, S.currentTF);
 }
 
+// ── VOLUME CHART ─────────────────────────────────────────────
 function drawVolChart() {
-  const cv=document.getElementById('volCanvas');const[ctx,W,H]=setupCanvas(cv);
-  const bars=S.bars;if(!bars.length)return;
-  const barPitch=Math.max(5,Math.min(14,Math.floor(W/80)));
-  const visible=getVisibleBars();const vn=visible.length;if(!vn)return;
-  const PAD={l:6,r:68,t:10,b:18};const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b;
-  // Normalize: cap at 95th percentile to prevent spike distortion
-  const sortedVols=visible.map(b=>b.volume).slice().sort((a,b)=>a-b);
-  const p95=sortedVols[Math.floor(sortedVols.length*0.95)]||sortedVols[sortedVols.length-1]||1;
-  const maxV=Math.max(p95*1.15,1);const bW=cW/vn;
-  for(let i=0;i<=2;i++){const gy=PAD.t+cH*i/2;ctx.strokeStyle='rgba(31,42,62,.4)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmt(maxV*(1-i/2)),W-PAD.r+4,gy+3);}
-  visible.forEach((bar,i)=>{const x=PAD.l+i*bW,bw=Math.max(1,bW-1),baseY=PAD.t+cH;
-    const buyH=(bar.buyVol/maxV)*cH, sellH=(bar.sellVol/maxV)*cH;
-    ctx.fillStyle='rgba(34,214,142,.7)';ctx.fillRect(x,baseY-buyH,bw*.55,buyH);
-    ctx.fillStyle='rgba(240,73,104,.7)';ctx.fillRect(x+bw*.55,baseY-sellH,bw*.45,sellH);});
-  if(S._volMA){const vm=S._volMA.slice(-vn).filter(v=>v!==null);if(vm.length>1){ctx.beginPath();vm.forEach((v,i)=>{const offset=(vn-vm.length),x=PAD.l+(i+offset+.5)*bW,y=PAD.t+cH*(1-v/maxV);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1.2;ctx.stroke();}}
+  const cv = document.getElementById('volCanvas');
+  const [ctx, W, H] = setupCanvas(cv);
+  const bars = S.bars; if (!bars.length) return;
+  const vp = getViewport(cv, VOL_PAD);
+  if (vp.iStart > vp.iEnd) return;
+  const P = VOL_PAD, {cW, cH, bW} = vp;
+
+  const slice = bars.slice(vp.iStart, vp.iEnd + 1);
+  const sortedV = slice.map(b=>b.volume).slice().sort((a,b)=>a-b);
+  const p95 = sortedV[Math.floor(sortedV.length * 0.95)] || sortedV[sortedV.length-1] || 1;
+  const maxV = Math.max(p95 * 1.15, 1);
+  const toY = v => P.t + cH * (1 - v / maxV);
+  vp._toY = toY; vp._toPrice = () => 0;
+
+  for (let i = 0; i <= 2; i++) {
+    const gy = P.t + cH * i / 2;
+    ctx.strokeStyle = 'rgba(31,42,62,.4)'; ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.moveTo(P.l, gy); ctx.lineTo(W - P.r, gy); ctx.stroke();
+    ctx.fillStyle = 'rgba(107,132,168,.4)'; ctx.font = "8px 'JetBrains Mono'"; ctx.textAlign = 'left';
+    ctx.fillText(fmt(maxV * (1 - i/2)), W - P.r + 5, gy + 3);
+  }
+
+  const bw = Math.max(1, bW - 1);
+  for (let i = vp.iStart; i <= vp.iEnd; i++) {
+    const bar = bars[i], x = vp.xOf(i), baseY = P.t + cH;
+    const buyH  = (bar.buyVol  / maxV) * cH;
+    const sellH = (bar.sellVol / maxV) * cH;
+    ctx.fillStyle = 'rgba(34,214,142,.7)';  ctx.fillRect(x - bw/2,       baseY - buyH,  bw * .55, buyH);
+    ctx.fillStyle = 'rgba(240,73,104,.7)';  ctx.fillRect(x - bw/2 + bw*.55, baseY - sellH, bw * .45, sellH);
+  }
+
+  if (S._volMA && S._volMA.length) {
+    let first = true;
+    ctx.beginPath();
+    for (let i = vp.iStart; i <= vp.iEnd; i++) {
+      const v = S._volMA[i]; if (v == null) continue;
+      const x = vp.xOf(i), y = toY(v);
+      first ? ctx.moveTo(x,y) : ctx.lineTo(x,y); first = false;
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1.2; ctx.stroke();
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -2203,13 +2530,14 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','backtest','portfolio','alerts','settings'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
+  ['trades','backtest','portfolio','alerts','settings','guide'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettingsWithStrategies();return;}
   if(tab==='alerts'){renderAlerts();return;}
   if(tab==='trades'){renderTrades();return;}
   if(tab==='backtest'){renderBacktest();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
+  if(tab==='guide'){renderGuide();return;}
 }
 function setView(v){
   resetChartState();S.currentView=v;
@@ -2260,7 +2588,13 @@ function renderSettings() {
     <button class="apply-btn blue" onclick="loadCurrentTicker()">⟳ RELOAD DATA</button>
   </div>`;
 }
-function applySettings(){S.settings.length=+document.getElementById('slLen').value;S.settings.spikeMult=+document.getElementById('slMult').value;logAlert('info',`Settings: MA=${S.settings.length}, Mult=${S.settings.spikeMult.toFixed(1)}`);runIndicators();scheduleRedraw();}
+function applySettings(){
+  const rawLen=+document.getElementById('slLen').value, rawMult=+document.getElementById('slMult').value;
+  S.settings.length    = Math.max(5,  Math.min(200, isFinite(rawLen) ?Math.round(rawLen):20));
+  S.settings.spikeMult = Math.max(1.5, Math.min(10,  isFinite(rawMult)?rawMult:2.0));
+  logAlert('info',`Settings: MA=${S.settings.length}, Mult=${S.settings.spikeMult.toFixed(1)}`);
+  runIndicators(); scheduleRedraw();
+}
 
 // ═══════════════════════════════════════════
 // ALERTS
@@ -2285,7 +2619,7 @@ function copyReport() {
   const report=`📊 ORDER FLOW ELITE — ${t.sym} (${t.name}) · ${S.currentTF.toUpperCase()}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 SIGNAL:      ${sig}
-TREND:       ${ind.bullTrend?'▲ BULL':'▼ BEAR'} (EMA50/200)
+TREND:       ${ind.trendState==='BULL'?'▲ BULL':ind.trendState==='BEAR'?'▼ BEAR':'◆ RANGE'} (EMA50/200 + VWAP)
 PRICE:       ${fmtPx(cur.close,t)}
 VOL vs AVG:  ${ind.volRatio.toFixed(0)}%
 HTF SPIKE:   ${ind.htfSpike?'YES ✅':'NO ❌'}
@@ -2713,47 +3047,81 @@ document.addEventListener('keydown',e=>{
 
 
 
-// v5.2 Functions
+// ── Pan/zoom (TradingView-style) ──────────────────────────────
+// viewEnd  = bar-index at the right edge (float, null = auto)
+// viewBars = number of bars visible
+// drag right → older bars (viewEnd decreases)
+// wheel zoom anchors to cursor position
 function initPanZoom() {
   const wrapper = document.getElementById('priceWrap');
+  let _drag = false, _startX = 0, _startVE = 0;
+
   wrapper.addEventListener('mousedown', e => {
-    S.isDragging = true;
-    S.dragStartX = e.clientX;
-    S.dragStartOffset = S.panOffset;
-    wrapper.classList.add('dragging');
+    if (e.button !== 0) return;
+    _drag = true;
+    _startX = e.clientX;
+    _startVE = S.viewEnd !== null ? S.viewEnd : S.bars.length;
+    wrapper.style.cursor = 'grabbing';
+    e.preventDefault();
   });
+
   document.addEventListener('mousemove', e => {
-    if (!S.isDragging) return;
-    const dx = e.clientX - S.dragStartX;
-    S.panOffset = Math.max(0, Math.floor(S.dragStartOffset - dx * (0.08 / S.zoomLevel)));
+    if (!_drag) return;
+    const cW = wrapper.clientWidth - CHART_PAD.l - CHART_PAD.r;
+    const dx = e.clientX - _startX;
+    // drag right (positive dx) → show older data → viewEnd decreases
+    let ve = _startVE - dx * S.viewBars / cW;
+    ve = Math.min(S.bars.length + S.viewBars * 0.2, ve);
+    ve = Math.max(S.viewBars * 0.1, ve);
+    S.viewEnd = ve;
     scheduleRedraw();
   });
+
   document.addEventListener('mouseup', () => {
-    if (S.isDragging) {
-      S.isDragging = false;
-      wrapper.classList.remove('dragging');
-    }
+    if (!_drag) return;
+    _drag = false;
+    wrapper.style.cursor = '';
   });
+
+  // Scroll wheel = zoom, anchored to cursor x
   wrapper.addEventListener('wheel', e => {
     e.preventDefault();
-    S.zoomLevel = Math.max(0.5, Math.min(3.0, S.zoomLevel * (e.deltaY > 0 ? 0.9 : 1.1)));
+    if (!S.bars.length) return;
+    const rect = wrapper.getBoundingClientRect();
+    const cW = wrapper.clientWidth - CHART_PAD.l - CHART_PAD.r;
+    const mx = Math.max(0, Math.min(cW, e.clientX - rect.left - CHART_PAD.l));
+    const frac = mx / cW;                        // 0=left edge, 1=right edge
+
+    const vEnd   = S.viewEnd !== null ? S.viewEnd : S.bars.length;
+    const barAtCursor = vEnd - S.viewBars * (1 - frac);
+
+    const factor = e.deltaY > 0 ? 1.15 : (1 / 1.15);
+    S.viewBars = Math.max(8, Math.min(400, Math.round(S.viewBars * factor)));
+
+    // Pin the bar under the cursor
+    let ve = barAtCursor + S.viewBars * (1 - frac);
+    ve = Math.min(S.bars.length + S.viewBars * 0.2, ve);
+    ve = Math.max(S.viewBars * 0.1, ve);
+    S.viewEnd = ve;
     scheduleRedraw();
-  }, { passive: false });
+  }, {passive: false});
+
+  // Double-click = reset to default view
+  wrapper.addEventListener('dblclick', () => { resetChartState(); scheduleRedraw(); });
 }
 
+// Returns the visible bar slice (used by hover tooltip + scanner etc.)
 function getVisibleBars() {
   const bars = S.bars;
   if (!bars.length) return [];
-  const W = document.getElementById('priceCanvas').parentElement.clientWidth;
-  const barPitch = Math.max(5, Math.min(14, Math.floor(W / 80)));
-  const barsOnScreen = Math.floor((W - 70) / (barPitch * S.zoomLevel));
-  const endIdx = Math.min(bars.length - 1, bars.length - 1 - S.panOffset);
-  return bars.slice(Math.max(0, endIdx - barsOnScreen + 1), endIdx + 1);
+  const cv = document.getElementById('priceCanvas');
+  const vp = getViewport(cv, CHART_PAD);
+  return bars.slice(vp.iStart, vp.iEnd + 1);
 }
 
 function resetChartState() {
-  S.panOffset = 0;
-  S.zoomLevel = 1.0;
+  S.viewEnd  = null;   // auto: newest bar flush-right
+  S.viewBars = 80;
 }
 
 function updateFavoriteStars() {
@@ -3016,7 +3384,9 @@ setInterval(() => {
 }, 5000);
 
 // ══════════════════════════════════════════════════════════════
-// HOVER TOOLTIP
+// CROSSHAIR + HOVER TOOLTIP
+// Mouse position is stored in S._crossX/Y and used by drawCrosshair()
+// so the crosshair is always in sync with the canvas render.
 // ══════════════════════════════════════════════════════════════
 function initHoverTooltip() {
   const wrapper = document.getElementById('priceWrap');
@@ -3025,54 +3395,61 @@ function initHoverTooltip() {
   wrapper.appendChild(tooltip);
 
   wrapper.addEventListener('mousemove', (e) => {
-    if (!S.bars.length) return;
+    if (!S.bars.length) { tooltip.style.display = 'none'; return; }
     const rect = wrapper.getBoundingClientRect();
     const mx = e.clientX - rect.left;
-    const visible = getVisibleBars();
-    if (!visible.length) { tooltip.style.display = 'none'; return; }
-    const W = wrapper.clientWidth;
-    const cW = W - 6 - 68; // PAD.l + PAD.r
-    const bW = cW / visible.length;
-    const barIdx = Math.floor((mx - 6) / bW);
-    if (barIdx < 0 || barIdx >= visible.length) { tooltip.style.display = 'none'; return; }
-    const bar = visible[barIdx];
+    const my = e.clientY - rect.top;
+
+    // Update crosshair position and redraw
+    S._crossX = mx; S._crossY = my;
+    scheduleRedraw();
+
+    // Find the bar under the cursor
+    const cv = document.getElementById('priceCanvas');
+    const vp = getViewport(cv, CHART_PAD);
+    const bi = Math.round(vp.iOf(mx));
+    if (bi < 0 || bi >= S.bars.length) { tooltip.style.display = 'none'; return; }
+    const bar = S.bars[bi];
     if (!bar) { tooltip.style.display = 'none'; return; }
 
     const bull = bar.close >= bar.open;
-    const deltaSign = bar.delta >= 0 ? '+' : '';
-    const buyRatio = bar.sellVol > 0 ? (bar.buyVol / bar.sellVol) : Infinity;
-    const sellRatio = bar.buyVol > 0 ? (bar.sellVol / bar.buyVol) : Infinity;
-    const isImb = buyRatio > 3 || sellRatio > 3;
-    const imbalanceTxt = isImb
-      ? (buyRatio > sellRatio
-          ? `${Math.min(buyRatio,99).toFixed(1)}:1 BUY`
-          : `${Math.min(sellRatio,99).toFixed(1)}:1 SELL`)
-      : null;
-    const chgPct = bar.open ? ((bar.close - bar.open) / bar.open * 100) : 0;
+    const dSign = bar.delta >= 0 ? '+' : '';
+    const bRatio = bar.sellVol > 0 ? bar.buyVol / bar.sellVol : Infinity;
+    const sRatio = bar.buyVol  > 0 ? bar.sellVol / bar.buyVol  : Infinity;
+    const isImb = bRatio > 3 || sRatio > 3;
+    const imbTxt = isImb ? (bRatio > sRatio
+      ? `${Math.min(bRatio,99).toFixed(1)}:1 BUY`
+      : `${Math.min(sRatio,99).toFixed(1)}:1 SELL`) : null;
+    const chgPct = bar.open ? (bar.close - bar.open) / bar.open * 100 : 0;
+    const dateStr = new Date(bar.time).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    const timeStr = fmtBarTime(bar.time, S.currentTF);
 
-    tooltip.innerHTML = `<div class="ht-title">${new Date(bar.time).toLocaleTimeString()}</div>
-      <div class="ht-row"><span class="ht-lbl">OPEN</span><span class="ht-val">${fmtPx(bar.open,S.currentTicker)}</span></div>
-      <div class="ht-row"><span class="ht-lbl">HIGH</span><span class="ht-val bull">${fmtPx(bar.high,S.currentTicker)}</span></div>
-      <div class="ht-row"><span class="ht-lbl">LOW</span><span class="ht-val bear">${fmtPx(bar.low,S.currentTicker)}</span></div>
-      <div class="ht-row"><span class="ht-lbl">CLOSE</span><span class="ht-val ${bull?'bull':'bear'}">${fmtPx(bar.close,S.currentTicker)} <span style="font-size:8px">${fmtP(chgPct)}</span></span></div>
-      <div class="ht-sep"></div>
-      <div class="ht-row"><span class="ht-lbl">VOLUME</span><span class="ht-val">${fmt(bar.volume)}</span></div>
-      <div class="ht-row"><span class="ht-lbl">DELTA</span><span class="ht-val ${bar.delta>=0?'bull':'bear'}">${deltaSign}${fmt(bar.delta)}</span></div>
-      <div class="ht-row"><span class="ht-lbl">BUY VOL</span><span class="ht-val bull">${fmt(bar.buyVol)}</span></div>
-      <div class="ht-row"><span class="ht-lbl">SELL VOL</span><span class="ht-val bear">${fmt(bar.sellVol)}</span></div>
-      ${isImb ? `<div class="ht-sep"></div><div class="ht-row"><span class="ht-lbl">IMBALANCE</span><span class="ht-val amber">${imbalanceTxt}</span></div>` : ''}`;
+    tooltip.innerHTML =
+      `<div class="ht-title">${timeStr} · ${dateStr}</div>
+       <div class="ht-row"><span class="ht-lbl">O</span><span class="ht-val">${fmtPx(bar.open,S.currentTicker)}</span>
+         <span class="ht-lbl" style="margin-left:8px">H</span><span class="ht-val bull">${fmtPx(bar.high,S.currentTicker)}</span></div>
+       <div class="ht-row"><span class="ht-lbl">L</span><span class="ht-val bear">${fmtPx(bar.low,S.currentTicker)}</span>
+         <span class="ht-lbl" style="margin-left:8px">C</span><span class="ht-val ${bull?'bull':'bear'}">${fmtPx(bar.close,S.currentTicker)} <span style="font-size:7px">${fmtP(chgPct)}</span></span></div>
+       <div class="ht-sep"></div>
+       <div class="ht-row"><span class="ht-lbl">VOL</span><span class="ht-val">${fmt(bar.volume)}</span>
+         <span class="ht-lbl" style="margin-left:8px">Δ</span><span class="ht-val ${bar.delta>=0?'bull':'bear'}">${dSign}${fmt(bar.delta)}</span></div>
+       <div class="ht-row"><span class="ht-lbl">BUY</span><span class="ht-val bull">${fmt(bar.buyVol)}</span>
+         <span class="ht-lbl" style="margin-left:8px">SELL</span><span class="ht-val bear">${fmt(bar.sellVol)}</span></div>
+       ${isImb ? `<div class="ht-sep"></div><div class="ht-row"><span class="ht-lbl">IMB</span><span class="ht-val amber">${imbTxt}</span></div>` : ''}`;
 
     tooltip.style.display = 'block';
-    const tW = tooltip.offsetWidth || 160;
-    const tH = tooltip.offsetHeight || 150;
-    let tx = mx + 14, ty = (e.clientY - rect.top) - tH / 2;
-    if (tx + tW > W - 4) tx = mx - tW - 14;
+    const W = wrapper.clientWidth, tW = tooltip.offsetWidth||165, tH = tooltip.offsetHeight||130;
+    let tx = mx + 16, ty = my - tH / 2;
+    if (tx + tW > W - 4) tx = mx - tW - 16;
     ty = Math.max(4, Math.min(ty, wrapper.clientHeight - tH - 4));
-    tooltip.style.left = tx + 'px';
-    tooltip.style.top  = ty + 'px';
+    tooltip.style.left = tx + 'px'; tooltip.style.top = ty + 'px';
   });
 
-  wrapper.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+  wrapper.addEventListener('mouseleave', () => {
+    S._crossX = null; S._crossY = null;
+    tooltip.style.display = 'none';
+    scheduleRedraw();
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3179,6 +3556,91 @@ function toggleStrategy(idx) {
     S._stratSignals = strategyEngine.evaluate(S.bars, S.lastInd);
   }
   logAlert('info', `Strategy "${s.name}" ${s.enabled?'enabled':'disabled'}`);
+}
+
+// ══════════════════════════════════════════════════════════════
+// GUIDE — reading guide for Order Flow Volume Suite ELITE
+// ══════════════════════════════════════════════════════════════
+function renderGuide() {
+  document.getElementById('rpContent').innerHTML = `
+<div style="padding:10px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx2);overflow-y:auto;max-height:100%;line-height:1.55">
+<div style="color:var(--teal);font-size:12px;font-weight:700;margin-bottom:8px;letter-spacing:.05em">ORDER FLOW VOLUME SUITE — READING GUIDE</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">TREND STATE</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">▲ BULL</span> — EMA50 &gt; EMA200 <em>and</em> price above VWAP. High-probability long bias.<br>
+  <span style="color:var(--bear)">▼ BEAR</span> — EMA50 &lt; EMA200 <em>and</em> price below VWAP. High-probability short bias.<br>
+  <span style="color:var(--amber)">◆ RANGE</span> — Mixed signals. Trend is ambiguous; reduce size or wait for clarity.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">ENTRY SIGNALS</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">LONG</span> — All 5 conditions met: Bull Trend + HTF Volume Spike + Divergence/Accumulation + No Exhaustion + Above-avg Vol.<br>
+  <span style="color:var(--bear)">SHORT</span> — Same 5 conditions, Bear Trend side. Uses <em>bearTrend</em> (not just !bullTrend) for tighter filtering.<br>
+  Signals fire on confirmed bars only; avoid trading against the VWAP anchor.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">SESSION CVD</div>
+<div style="margin-bottom:6px">
+  Cumulative Volume Delta resets each trading day (UTC midnight). Measures net buying vs selling pressure for the session.<br>
+  <span style="color:var(--bull)">▲ Rising CVD</span> = buyers absorbing supply. <span style="color:var(--bear)">▼ Falling CVD</span> = sellers pressing down.<br>
+  Divergence between price and CVD often precedes reversals.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">BAR IMBALANCE</div>
+<div style="margin-bottom:6px">
+  Normalized delta = delta ÷ volume. Range [−1, +1].<br>
+  <span style="color:var(--bull)">&gt;+0.3</span> = strong buy-side pressure on this bar.<br>
+  <span style="color:var(--bear)">&lt;−0.3</span> = strong sell-side pressure.<br>
+  Values near 0 indicate balanced two-sided flow (absorption zone).
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">MARKET STATE</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--amber)">ABSORB</span> — High volume, small body. Institutional absorption; potential reversal or continuation after pause.<br>
+  <span style="color:var(--bull)">ACCUM</span> — Buyers dominating on a down-close bar. Hidden accumulation below resistance.<br>
+  <span style="color:var(--bear)">DISTR</span> — Sellers dominating on an up-close bar. Hidden distribution near highs.<br>
+  <span style="color:var(--tx3)">—</span> — No notable market microstructure event on this bar.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">DIVERGENCE (PINE v6 LOGIC)</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">Bull Div</span> — Price prints a new pivot low <em>below</em> the prior pivot low, but delta is improving (less selling). Bullish divergence.<br>
+  <span style="color:var(--bear)">Bear Div</span> — Price prints a new pivot high <em>above</em> the prior pivot high, but delta is weakening (less buying). Bearish divergence.<br>
+  Checked 5-bar pivot windows vs 11-bar lookback.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">EXHAUSTION (TIGHTER v6)</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">Bull Exhaust</span> — Positive delta but bearish close (close &lt; open, close ≤ prev close, small body, above-avg volume). Buying effort failing.<br>
+  <span style="color:var(--bear)">Bear Exhaust</span> — Negative delta but bullish close (close &gt; open, close ≥ prev close, small body, above-avg volume). Selling effort failing.<br>
+  Added <em>above-avg volume</em> + close-direction filters vs v5 to reduce false signals.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">VWAP LINE (CHART)</div>
+<div style="margin-bottom:6px">
+  <span style="color:#00c4a0">Teal dashed line</span> on the price chart. Session-reset daily.<br>
+  Price above VWAP = buyers in control for the day. Below = sellers in control.<br>
+  Used as primary trend filter in combination with EMA cross.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">CVD LINE (DELTA CHART)</div>
+<div style="margin-bottom:6px">
+  <span style="color:#00c4a0">Teal line</span> overlaid on the delta bar chart. Shows cumulative net delta for the current session.<br>
+  Sloping up = sustained buying pressure. Sloping down = sustained selling. Flat = balanced market.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">CONFIDENCE SCORE</div>
+<div style="margin-bottom:6px">
+  5 conditions scored: Trend, HTF Spike, Divergence/Accum, No Exhaustion, Above-Avg Vol.<br>
+  5/5 = max confidence long/short. 4/5 = high. 3/5 = moderate. ≤2 = no trade.
+</div>
+
+<div style="color:var(--tx3);font-size:9px;margin-top:12px;border-top:1px solid var(--bd);padding-top:6px">
+  Order Flow Volume Suite ELITE [v6 Multi-TF] — Ported from Pine Script v6.<br>
+  For educational purposes. Not financial advice.
+</div>
+</div>`;
 }
 
 // ══════════════════════════════════════════════════════════════
