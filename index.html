@@ -585,7 +585,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="cond-list">
         <div class="cond" id="c0">
           <div class="cond-dot"></div>
-          <div class="cond-n">Bull Trend (EMA50>200)</div>
+          <div class="cond-n">Bull Trend (EMA50>200+VWAP)</div>
           <div class="cond-s" id="c0s">—</div>
           <div class="cond-tooltip" id="c0tip">EMA50: — > EMA200: —</div>
         </div>
@@ -945,6 +945,7 @@ class ManualTrading {
     let updated = false;
     this.trades.forEach(t => {
       if (t.open) {
+        if (!t.entry || t.entry <= 0) return; // guard against corrupted localStorage entry
         t.currentPrice = currentPrice;
         t.bars++;
         t.pnlPct = t.side === 'long' ? ((currentPrice - t.entry) / t.entry * 100) : ((t.entry - currentPrice) / t.entry * 100);
@@ -1029,7 +1030,7 @@ const S = {
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
   focusMode: false,
-  _lastTickTime: 0, _wsRetryDelay: 2000,
+  _lastTickTime: 0,
   favorites: JSON.parse(localStorage.getItem('of_favorites') || '[]'),
   watchlist: JSON.parse(localStorage.getItem('of_watchlist') || '[]'),
   scannerActive: false, scannerInterval: null, scanResults: {}, lastScanTime: null,
@@ -1048,7 +1049,12 @@ const fmtP  = n=>(n>=0?'+':'')+n.toFixed(2)+'%';
 const fmtPx = (n,tk) => { if(!n||isNaN(n))return'—'; if(tk&&tk.type==='crypto') return n>=1000?n.toFixed(0):n>=1?n.toFixed(2):n.toFixed(6); return n>=100?n.toFixed(2):n.toFixed(4); };
 const ts = () => { const d=new Date(); return [d.getHours(),d.getMinutes(),d.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':'); };
 const ema = (data,p) => { const k=2/(p+1); return data.reduce((acc,v,i)=>{acc.push(i===0?v:v*k+acc[i-1]*(1-k));return acc;},[]);};
-const sma = (arr,p) => arr.map((_,i)=>{ if(i<p-1)return null; return arr.slice(i-p+1,i+1).reduce((a,b)=>a+b,0)/p;});
+// Sliding-window O(n) SMA — avoids O(n·p) slice+reduce per element
+const sma = (arr,p) => { const out=new Array(arr.length).fill(null); let sum=0; for(let i=0;i<arr.length;i++){sum+=arr[i];if(i>=p)sum-=arr[i-p];if(i>=p-1)out[i]=sum/p;} return out; };
+// Session-reset VWAP — shared by runIndicators() and computeIndicatorsForBars()
+function calcSessionVWAP(bars){const arr=[];let cumPV=0,cumV=0,lastDay=-1;for(const bar of bars){const day=Math.floor(bar.time/86400000);if(day!==lastDay&&lastDay!==-1){cumPV=0;cumV=0;}lastDay=day;const hlc3=(bar.high+bar.low+bar.close)/3;cumPV+=hlc3*bar.volume;cumV+=bar.volume;arr.push(cumV>0?cumPV/cumV:bar.close);}return arr;}
+// Cumulative dollar volume — single source of truth used in 5 load paths
+function recalcCumVolume(){S.cumBuy=S.bars.reduce((a,b)=>a+b.buyDol,0);S.cumSell=S.bars.reduce((a,b)=>a+b.sellDol,0);}
 // HTML entity encoder — prevents XSS when inserting user-supplied strings into innerHTML
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
@@ -1296,8 +1302,7 @@ async function fetchBinance(binanceSym, signal) {
           delta:takerBuy-takerSell, buyDol:takerBuy*c, sellDol:takerSell*c,
           body:Math.abs(c-o) };
       });
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       updateAssetBar24h_Binance(binanceSym);
       setSrcBadge('BINANCE','bull');
       logAlert('info',`✓ Binance: ${S.bars.length} bars for ${binanceSym}`);
@@ -1338,8 +1343,7 @@ async function fetchYahoo(sym, signal) {
           buyDol:buyVol*c, sellDol:sellVol*c, body:Math.abs(c-o) };
       }).filter(Boolean);
       if (S.bars.length < 5) continue;
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       updateAssetBar_Yahoo(result, sym);
       setSrcBadge('YAHOO FINANCE','teal');
       logAlert('info',`✓ Yahoo: ${S.bars.length} bars for ${sym}`);
@@ -1363,7 +1367,6 @@ function startWebSocket(binanceSym, retryDelay) {
   try { ws = new WebSocket(url); } catch(e) { return; }
   ws.onopen = () => {
     S.wsConn = ws;
-    S._wsRetryDelay = 2000; // reset backoff on success
     document.getElementById('wsLiveBadge').style.display = 'inline-flex';
     if (S.pollTimer)     { clearInterval(S.pollTimer);     S.pollTimer = null; }
     if (S._pollCountdown){ clearInterval(S._pollCountdown); S._pollCountdown = null; }
@@ -1391,8 +1394,7 @@ function startWebSocket(binanceSym, retryDelay) {
       const last = S.bars[S.bars.length - 1];
       if (last.time === bar.time) Object.assign(last, bar);
       else if (bar.time > last.time) { S.bars.push(bar); if (S.bars.length > 300) S.bars.shift(); }
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol, 0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol, 0);
+      recalcCumVolume();
       runIndicators();
       scheduleRedraw();
       checkPriceAlerts(bar.close);
@@ -1464,8 +1466,7 @@ async function fetchBinancePoll(binanceSym) {
           if (S.bars.length > 300) S.bars.shift();
         }
       });
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       return true;
     } catch(_) {}
   }
@@ -1510,8 +1511,7 @@ async function fetchYahooPoll(sym) {
           if (S.bars.length > 300) S.bars.shift();
         }
       });
-      S.cumBuy  = S.bars.reduce((a,b)=>a+b.buyDol,0);
-      S.cumSell = S.bars.reduce((a,b)=>a+b.sellDol,0);
+      recalcCumVolume();
       return true;
     } catch(_) {}
   }
@@ -1607,9 +1607,7 @@ function computeIndicatorsForBars(bars, settings) {
   const closes = bars.map(b=>b.close), vols = bars.map(b=>b.volume), bodies = bars.map(b=>b.body||Math.abs(b.close-b.open));
   const e50 = ema(closes, 50), e200 = ema(closes, 200);
   // Session VWAP
-  const vwapArr2=[]; let cPV=0, cV=0, lVWday=-1;
-  for(const bar of bars){const day=Math.floor(bar.time/86400000);if(day!==lVWday && lVWday!==-1){cPV=0;cV=0;}lVWday=day;const hlc3=(bar.high+bar.low+bar.close)/3;cPV+=hlc3*bar.volume;cV+=bar.volume;vwapArr2.push(cV>0?cPV/cV:bar.close);}
-  const vwap2=vwapArr2[n-1];
+  const vwap2=calcSessionVWAP(bars)[n-1];
   const bullTrend = e50[n-1]>e200[n-1] && cur.close>vwap2;
   const bearTrend = e50[n-1]<e200[n-1] && cur.close<vwap2;
   const trendState = bullTrend?'BULL':bearTrend?'BEAR':'RANGE';
@@ -1622,10 +1620,10 @@ function computeIndicatorsForBars(bars, settings) {
   const htfMA = htfVols.length >= length ? htfVols.slice(-length).reduce((a,b)=>a+b,0)/length : htfV;
   const htfSpike = htfV > htfMA * spikeMult;
   const buyVols = bars.map(b=>b.buyVol), sellVols = bars.map(b=>b.sellVol);
-  const hasPivotLow  = n>10 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
-  const hasPivotHigh = n>10 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
-  const bullDiv = hasPivotLow  && n>11 && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
-  const bearDiv = hasPivotHigh && n>11 && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
+  const hasPivotLow  = n>11 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
+  const hasPivotHigh = n>11 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
+  const bullDiv = hasPivotLow  && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
+  const bearDiv = hasPivotHigh && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
   const absorption    = cur.volume > volMAn*1.8 && (cur.body||0) < bodyMAn*0.5;
   const hiddenAccum   = cur.buyVol > cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
   const hiddenDistrib = cur.sellVol > cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
@@ -1681,15 +1679,7 @@ function runIndicators() {
   S._prevBarCount = n;
 
   // ── Session VWAP (reset on day change) ───────────────────────
-  const vwapArr=[]; let cumPV=0, cumV=0, lastVWAPDay=-1;
-  for(const bar of bars){
-    const day=Math.floor(bar.time/86400000);
-    if(day!==lastVWAPDay && lastVWAPDay!==-1){cumPV=0;cumV=0;}
-    lastVWAPDay=day;
-    const hlc3=(bar.high+bar.low+bar.close)/3;
-    cumPV+=hlc3*bar.volume; cumV+=bar.volume;
-    vwapArr.push(cumV>0?cumPV/cumV:bar.close);
-  }
+  const vwapArr=calcSessionVWAP(bars);
   const vwap=vwapArr[n-1];
   S._vwap=vwapArr;
   // ── 3-state trend (Pine v6: BULL/BEAR/RANGE) ─────────────────
@@ -1716,11 +1706,11 @@ function runIndicators() {
   // ── Bar imbalance (normalized delta [-1,+1]) ──────────────────
   const imbalance=cur.volume>0?cur.delta/cur.volume:0;
   const buyVols = bars.map(b=>b.buyVol), sellVols = bars.map(b=>b.sellVol);
-  const hasPivotLow  = n>10 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
-  const hasPivotHigh = n>10 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
+  const hasPivotLow  = n>11 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
+  const hasPivotHigh = n>11 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
   // ── Updated divergence (Pine v6: price extreme + delta improves) ─
-  const bullDiv = hasPivotLow  && n>11 && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
-  const bearDiv = hasPivotHigh && n>11 && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
+  const bullDiv = hasPivotLow  && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
+  const bearDiv = hasPivotHigh && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
   const absorption    = cur.volume>volMAn*1.8 && cur.body<bodyMAn*0.5;
   const hiddenAccum   = cur.buyVol>cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
   const hiddenDistrib = cur.sellVol>cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
@@ -1779,8 +1769,8 @@ function runIndicators() {
   }
   
   // Update condition tooltips with exact values
-  document.getElementById('c0tip').textContent = 
-    `EMA50: ${(S._e50[S._e50.length-1] || 0).toFixed(2)} > EMA200: ${(S._e200[S._e200.length-1] || 0).toFixed(2)}`;
+  document.getElementById('c0tip').textContent =
+    `EMA50: ${(S._e50[S._e50.length-1]||0).toFixed(2)} > EMA200: ${(S._e200[S._e200.length-1]||0).toFixed(2)} | VWAP: ${fmtPx(ind.vwap,S.currentTicker)} (${cur.close>ind.vwap?'above':'below'})`;
   document.getElementById('c1tip').textContent = 
     `HTF Vol: ${fmt(htfVol)} > Avg × ${S.settings.spikeMult.toFixed(1)}`;
   document.getElementById('c2tip').textContent = 
@@ -1807,7 +1797,7 @@ function updateLeftPanel(ind, cur) {
   else { box.classList.add('wait');val.classList.add('wait');val.textContent=ind.longExit?'EXIT ↑':ind.shortExit?'EXIT ↓':'WAIT'; note.textContent=ind.longExit||ind.shortExit?'EXIT SIGNAL DETECTED':`${ind.condScore}/5 CONDITIONS MET`; }
   // ── Condition Detail Panel ──────────────────────────────────
   const condItems=[
-    {label:'Bull Trend (EMA50>200)',hit:ind.bullTrend,warn:!ind.bullTrend},
+    {label:'Bull Trend (EMA50>200 + close>VWAP)',hit:ind.bullTrend,warn:!ind.bullTrend},
     {label:'HTF Volume Spike',hit:ind.htfSpike,warn:false},
     {label:'Divergence / Accumulation',hit:ind.bullDiv||ind.hiddenAccum,warn:false},
     {label:'No Bull Exhaustion',hit:!ind.bullExhaust,warn:ind.bullExhaust},
@@ -1829,7 +1819,7 @@ function updateLeftPanel(ind, cur) {
   const sf=document.getElementById('scoreFill'); sf.style.width=fillPct+'%';
   sf.style.background=ind.condScore>=5?'var(--bull)':ind.condScore>=3?'var(--amber)':'var(--tx3)';
   const tp=document.getElementById('trendPill');
-  tp.className='trend-pill '+(ind.trendState==='BULL'?'bull':ind.trendState==='BEAR'?'bear':'amber');
+  tp.className='trend-pill '+(ind.trendState==='BULL'?'bull':ind.trendState==='BEAR'?'bear':'range');
   tp.textContent=ind.trendState==='BULL'?'▲  BULL TREND':ind.trendState==='BEAR'?'▼  BEAR TREND':'◆  RANGING';
   const hv=document.getElementById('htfVal'); hv.className='htf-val '+(ind.htfSpike?'on':'off');
   hv.textContent=ind.htfSpike?'✅ SPIKE':'❌ NO';
@@ -2059,7 +2049,7 @@ function drawCandleChart() {
   // EMA
   if(S._e50&&S._e50.length>=bars.length){[{d:S._e50.slice(-vn),c:'rgba(245,166,35,.7)',lw:1.2},{d:(S._e200||[]).slice(-vn),c:'rgba(74,124,220,.7)',lw:1.5}].forEach(({d,c,lw})=>{if(!d.length)return;ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=lw;d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();});}
   // VWAP (teal dashed)
-  if(S._vwap&&S._vwap.length>=bars.length){const vd=S._vwap.slice(-vn);ctx.beginPath();ctx.strokeStyle='rgba(0,196,160,.85)';ctx.lineWidth=1.2;ctx.setLineDash([4,3]);vd.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(0,196,160,.75)';ctx.font="7px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText('VWAP '+fmtPx(vd[vd.length-1],S.currentTicker),W-PAD.r+4,toY(vd[vd.length-1])+3);}
+  if(S._vwap&&S._vwap.length>=bars.length){const vd=S._vwap.slice(-vn);ctx.beginPath();ctx.strokeStyle='rgba(0,196,160,.85)';ctx.lineWidth=1.2;ctx.setLineDash([4,3]);vd.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(0,196,160,.75)';ctx.font="7px 'JetBrains Mono'";ctx.textAlign='left';const vwapLblY=Math.max(PAD.t+8,Math.min(PAD.t+cH-4,toY(vd[vd.length-1])));ctx.fillText('VWAP '+fmtPx(vd[vd.length-1],S.currentTicker),W-PAD.r+4,vwapLblY+3);}
   // candles
   visible.forEach((bar,i)=>{
     // Focus engine: fade distant bars when focus mode is on
@@ -2131,7 +2121,7 @@ function drawFlowChart() {
     });
   }
   // VWAP (teal dashed)
-  if(S._vwap&&S._vwap.length>=bars.length){const vd=S._vwap.slice(-vn);ctx.beginPath();ctx.strokeStyle='rgba(0,196,160,.7)';ctx.lineWidth=1.2;ctx.setLineDash([4,3]);vd.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);}
+  if(S._vwap&&S._vwap.length>=bars.length){const vd=S._vwap.slice(-vn);ctx.beginPath();ctx.strokeStyle='rgba(0,196,160,.7)';ctx.lineWidth=1.2;ctx.setLineDash([4,3]);vd.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(0,196,160,.7)';ctx.font="7px 'JetBrains Mono'";ctx.textAlign='left';const vwapFLblY=Math.max(PAD.t+8,Math.min(PAD.t+cH-4,toY(vd[vd.length-1])));ctx.fillText('VWAP '+fmtPx(vd[vd.length-1],S.currentTicker),W-PAD.r+4,vwapFLblY+3);}
 
   const maxDelta=Math.max(...visible.map(b=>Math.abs(b.delta)),1);
 
@@ -2337,7 +2327,13 @@ function renderSettings() {
     <button class="apply-btn blue" onclick="loadCurrentTicker()">⟳ RELOAD DATA</button>
   </div>`;
 }
-function applySettings(){S.settings.length=+document.getElementById('slLen').value;S.settings.spikeMult=+document.getElementById('slMult').value;logAlert('info',`Settings: MA=${S.settings.length}, Mult=${S.settings.spikeMult.toFixed(1)}`);runIndicators();scheduleRedraw();}
+function applySettings(){
+  const rawLen=+document.getElementById('slLen').value, rawMult=+document.getElementById('slMult').value;
+  S.settings.length    = Math.max(5,  Math.min(200, isFinite(rawLen) ?Math.round(rawLen):20));
+  S.settings.spikeMult = Math.max(1.5, Math.min(10,  isFinite(rawMult)?rawMult:2.0));
+  logAlert('info',`Settings: MA=${S.settings.length}, Mult=${S.settings.spikeMult.toFixed(1)}`);
+  runIndicators(); scheduleRedraw();
+}
 
 // ═══════════════════════════════════════════
 // ALERTS
@@ -2362,7 +2358,7 @@ function copyReport() {
   const report=`📊 ORDER FLOW ELITE — ${t.sym} (${t.name}) · ${S.currentTF.toUpperCase()}
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 SIGNAL:      ${sig}
-TREND:       ${ind.bullTrend?'▲ BULL':'▼ BEAR'} (EMA50/200)
+TREND:       ${ind.trendState==='BULL'?'▲ BULL':ind.trendState==='BEAR'?'▼ BEAR':'◆ RANGE'} (EMA50/200 + VWAP)
 PRICE:       ${fmtPx(cur.close,t)}
 VOL vs AVG:  ${ind.volRatio.toFixed(0)}%
 HTF SPIKE:   ${ind.htfSpike?'YES ✅':'NO ❌'}
