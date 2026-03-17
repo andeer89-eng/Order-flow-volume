@@ -2016,6 +2016,7 @@ function setupCanvas(canvas) {
   }
   const ctx=canvas.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
   return [ctx,W,H];
 }
 // ── RAF render system ─────────────────────────────────────────
