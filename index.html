@@ -563,9 +563,21 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="sec-lbl">METRICS</div>
       <div class="metrics-2">
         <div class="mc"><div class="mc-n">VOL vs AVG</div><div class="mc-v" id="mVolRatio">—</div></div>
-        <div class="mc"><div class="mc-n">DELTA</div><div class="mc-v" id="mDelta">—</div></div>
+        <div class="mc"><div class="mc-n">BAR IMB</div><div class="mc-v" id="mImbalance">—</div></div>
         <div class="mc"><div class="mc-n">BUY $</div><div class="mc-v bull" id="mBuyDol">—</div></div>
         <div class="mc"><div class="mc-n">SELL $</div><div class="mc-v bear" id="mSellDol">—</div></div>
+        <div class="mc"><div class="mc-n">SESSION CVD</div><div class="mc-v" id="mCVD">—</div></div>
+        <div class="mc"><div class="mc-n">DELTA</div><div class="mc-v" id="mDelta">—</div></div>
+      </div>
+      <!-- VWAP metric row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">VWAP</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">Price vs Session VWAP</div></div>
+        <div class="htf-val off" id="vwapVal">—</div>
+      </div>
+      <!-- Market state row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">MARKET STATE</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">ABSORB / ACCUM / DISTR</div></div>
+        <div class="htf-val off" id="mktStateVal">—</div>
       </div>
     </div>
     <div class="lp-sec">
@@ -671,6 +683,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="rp-tab" id="tab-portfolio" onclick="setTab('portfolio')">SCANNER</div>
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
+      <div class="rp-tab" id="tab-guide" onclick="setTab('guide')">GUIDE</div>
     </div>
     <div class="rp-content" id="rpContent"></div>
   </div>
@@ -1011,7 +1024,7 @@ const S = {
   pollTimer:null, pollSec:0,
   pnl:{ open:null, closed:[], equity:[0] },
   lastInd:null,
-  _e50:[], _e200:[], _volMA:[],
+  _e50:[], _e200:[], _volMA:[], _vwap:[], _cvdArr:[],
   currentTicker: FLAT_TICKERS[0],
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
@@ -1593,7 +1606,13 @@ function computeIndicatorsForBars(bars, settings) {
   const cur = bars[n-1];
   const closes = bars.map(b=>b.close), vols = bars.map(b=>b.volume), bodies = bars.map(b=>b.body||Math.abs(b.close-b.open));
   const e50 = ema(closes, 50), e200 = ema(closes, 200);
-  const bullTrend = e50[n-1] > e200[n-1];
+  // Session VWAP
+  const vwapArr2=[]; let cPV=0, cV=0, lVWday=-1;
+  for(const bar of bars){const day=Math.floor(bar.time/86400000);if(day!==lVWday && lVWday!==-1){cPV=0;cV=0;}lVWday=day;const hlc3=(bar.high+bar.low+bar.close)/3;cPV+=hlc3*bar.volume;cV+=bar.volume;vwapArr2.push(cV>0?cPV/cV:bar.close);}
+  const vwap2=vwapArr2[n-1];
+  const bullTrend = e50[n-1]>e200[n-1] && cur.close>vwap2;
+  const bearTrend = e50[n-1]<e200[n-1] && cur.close<vwap2;
+  const trendState = bullTrend?'BULL':bearTrend?'BEAR':'RANGE';
   const volMA = sma(vols, length), volMAn = volMA[n-1] || 1;
   const bodyMA = sma(bodies, 20), bodyMAn = bodyMA[n-1] || 1;
   // HTF volume spike (rolling 5-bar sum vs rolling average)
@@ -1605,21 +1624,23 @@ function computeIndicatorsForBars(bars, settings) {
   const buyVols = bars.map(b=>b.buyVol), sellVols = bars.map(b=>b.sellVol);
   const hasPivotLow  = n>10 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
   const hasPivotHigh = n>10 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
-  const bullDiv = hasPivotLow  && cur.buyVol  > (buyVols[n-7]||0);
-  const bearDiv = hasPivotHigh && cur.sellVol > (sellVols[n-7]||0);
+  const bullDiv = hasPivotLow  && n>11 && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
+  const bearDiv = hasPivotHigh && n>11 && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
   const absorption    = cur.volume > volMAn*1.8 && (cur.body||0) < bodyMAn*0.5;
   const hiddenAccum   = cur.buyVol > cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
   const hiddenDistrib = cur.sellVol > cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
-  const bullExhaust   = cur.delta>0 && n>1 && cur.close<=bars[n-2].close && (cur.body||0)<bodyMAn;
-  const bearExhaust   = cur.delta<0 && n>1 && cur.close>=bars[n-2].close && (cur.body||0)<bodyMAn;
+  const aboveAvgVol   = cur.volume>volMAn;
+  const bullExhaust   = cur.delta>0 && n>1 && cur.close<cur.open && cur.close<=bars[n-2].close && (cur.body||0)<bodyMAn && aboveAvgVol;
+  const bearExhaust   = cur.delta<0 && n>1 && cur.close>cur.open && cur.close>=bars[n-2].close && (cur.body||0)<bodyMAn && aboveAvgVol;
+  const marketState   = absorption?'ABSORB':hiddenAccum?'ACCUM':hiddenDistrib?'DISTR':'—';
   const totalCum = bars.reduce((a,b)=>a+b.buyDol,0) + bars.reduce((a,b)=>a+b.sellDol,0);
   const dominance = totalCum ? (bars.reduce((a,b)=>a+b.buyDol,0)/totalCum*100) : 50;
   const longEntry  = bullTrend && htfSpike && (bullDiv||hiddenAccum) && !bullExhaust;
-  const shortEntry = !bullTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
+  const shortEntry = bearTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
   const longExit   = bearExhaust || bearDiv;
   const shortExit  = bullExhaust || bullDiv;
-  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,cur.volume>volMAn].filter(Boolean).length;
-  return { bullTrend,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit:longExit&&!longEntry,shortExit:shortExit&&!shortEntry,condScore,volMAn,volRatio:(cur.volume/volMAn)*100,e50,e200 };
+  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,aboveAvgVol].filter(Boolean).length;
+  return { bullTrend,bearTrend,trendState,vwap:vwap2,marketState,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit:longExit&&!longEntry,shortExit:shortExit&&!shortEntry,condScore,volMAn,volRatio:(cur.volume/volMAn)*100,e50,e200 };
 }
 
 // ═══════════════════════════════════════════
@@ -1659,7 +1680,22 @@ function runIndicators() {
   }
   S._prevBarCount = n;
 
-  const bullTrend = e50[n-1] > e200[n-1];
+  // ── Session VWAP (reset on day change) ───────────────────────
+  const vwapArr=[]; let cumPV=0, cumV=0, lastVWAPDay=-1;
+  for(const bar of bars){
+    const day=Math.floor(bar.time/86400000);
+    if(day!==lastVWAPDay && lastVWAPDay!==-1){cumPV=0;cumV=0;}
+    lastVWAPDay=day;
+    const hlc3=(bar.high+bar.low+bar.close)/3;
+    cumPV+=hlc3*bar.volume; cumV+=bar.volume;
+    vwapArr.push(cumV>0?cumPV/cumV:bar.close);
+  }
+  const vwap=vwapArr[n-1];
+  S._vwap=vwapArr;
+  // ── 3-state trend (Pine v6: BULL/BEAR/RANGE) ─────────────────
+  const bullTrend = e50[n-1]>e200[n-1] && cur.close>vwap;
+  const bearTrend = e50[n-1]<e200[n-1] && cur.close<vwap;
+  const trendState = bullTrend?'BULL':bearTrend?'BEAR':'RANGE';
   const volMA = sma(vols, length), volMAn = volMA[n-1] || 1;
   const volRatio = (cur.volume / volMAn) * 100;
   const bodyMA = sma(bodies, 20), bodyMAn = bodyMA[n-1] || 1;
@@ -1668,27 +1704,43 @@ function runIndicators() {
   const htfMAv = S.htfVols.slice(-length).reduce((a,b)=>a+b,0) / Math.min(S.htfVols.length, length);
   const htfVol = S.htfVols[S.htfVols.length-1];
   const htfSpike = htfVol > htfMAv * spikeMult;
+  // ── Session CVD (reset on day change) ────────────────────────
+  let cvdCum=0, cvdDay=-1; const cvdArr=[];
+  for(const bar of bars){
+    const day=Math.floor(bar.time/86400000);
+    if(day!==cvdDay && cvdDay!==-1)cvdCum=0;
+    cvdDay=day; cvdCum+=bar.delta; cvdArr.push(cvdCum);
+  }
+  const sessionCVD=cvdArr[n-1];
+  S._cvdArr=cvdArr;
+  // ── Bar imbalance (normalized delta [-1,+1]) ──────────────────
+  const imbalance=cur.volume>0?cur.delta/cur.volume:0;
   const buyVols = bars.map(b=>b.buyVol), sellVols = bars.map(b=>b.sellVol);
   const hasPivotLow  = n>10 && bars[n-6].low  < bars[n-11].low  && bars[n-6].low  < bars[n-1].low;
   const hasPivotHigh = n>10 && bars[n-6].high > bars[n-11].high && bars[n-6].high > bars[n-1].high;
-  const bullDiv = hasPivotLow  && cur.buyVol  > (buyVols[n-7]||0);
-  const bearDiv = hasPivotHigh && cur.sellVol > (sellVols[n-7]||0);
-  const absorption    = cur.volume > volMAn*1.8 && cur.body < bodyMAn*0.5;
-  const hiddenAccum   = cur.buyVol > cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
-  const hiddenDistrib = cur.sellVol > cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
-  const bullExhaust   = cur.delta>0 && n>1 && cur.close<=bars[n-2].close && cur.body<bodyMAn;
-  const bearExhaust   = cur.delta<0 && n>1 && cur.close>=bars[n-2].close && cur.body<bodyMAn;
+  // ── Updated divergence (Pine v6: price extreme + delta improves) ─
+  const bullDiv = hasPivotLow  && n>11 && cur.low<bars[n-11].low  && cur.delta>bars[n-6].delta;
+  const bearDiv = hasPivotHigh && n>11 && cur.high>bars[n-11].high && cur.delta<bars[n-6].delta;
+  const absorption    = cur.volume>volMAn*1.8 && cur.body<bodyMAn*0.5;
+  const hiddenAccum   = cur.buyVol>cur.sellVol && n>1 && cur.close<=bars[n-2].close && cur.volume>volMAn;
+  const hiddenDistrib = cur.sellVol>cur.buyVol && n>1 && cur.close>=bars[n-2].close && cur.volume>volMAn;
+  const aboveAvgVol   = cur.volume>volMAn;
+  // ── Tighter exhaustion (Pine v6: requires close direction + above-avg vol) ─
+  const bullExhaust   = cur.delta>0 && n>1 && cur.close<cur.open && cur.close<=bars[n-2].close && cur.body<bodyMAn && aboveAvgVol;
+  const bearExhaust   = cur.delta<0 && n>1 && cur.close>cur.open && cur.close>=bars[n-2].close && cur.body<bodyMAn && aboveAvgVol;
+  // ── Market state rollup ───────────────────────────────────────
+  const marketState   = absorption?'ABSORB':hiddenAccum?'ACCUM':hiddenDistrib?'DISTR':'—';
   const totalCum = S.cumBuy + S.cumSell;
   const dominance = totalCum ? (S.cumBuy/totalCum*100) : 50;
   const longEntry  = bullTrend && htfSpike && (bullDiv||hiddenAccum) && !bullExhaust;
-  const shortEntry = !bullTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
+  const shortEntry = bearTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
   const longExit   = bearExhaust || bearDiv;
   const shortExit  = bullExhaust || bullDiv;
-  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,cur.volume>volMAn].filter(Boolean).length;
+  const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,aboveAvgVol].filter(Boolean).length;
   cur.longEntry=longEntry; cur.shortEntry=shortEntry;
   cur.longExit=longExit&&!longEntry; cur.shortExit=shortExit&&!shortEntry;
   S._e50=e50; S._e200=e200; S._volMA=volMA;
-  const ind = { e50,e200,bullTrend,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore };
+  const ind = { e50,e200,bullTrend,bearTrend,trendState,vwap,sessionCVD,imbalance,marketState,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore };
   S.lastInd = ind;
   updateLeftPanel(ind, cur);
   updatePnL(ind, cur);
@@ -1776,8 +1828,9 @@ function updateLeftPanel(ind, cur) {
   document.getElementById('scoreNum').textContent=ind.condScore+'/5';
   const sf=document.getElementById('scoreFill'); sf.style.width=fillPct+'%';
   sf.style.background=ind.condScore>=5?'var(--bull)':ind.condScore>=3?'var(--amber)':'var(--tx3)';
-  const tp=document.getElementById('trendPill'); tp.className='trend-pill '+(ind.bullTrend?'bull':'bear');
-  tp.textContent=ind.bullTrend?'▲  BULL TREND':'▼  BEAR TREND';
+  const tp=document.getElementById('trendPill');
+  tp.className='trend-pill '+(ind.trendState==='BULL'?'bull':ind.trendState==='BEAR'?'bear':'amber');
+  tp.textContent=ind.trendState==='BULL'?'▲  BULL TREND':ind.trendState==='BEAR'?'▼  BEAR TREND':'◆  RANGING';
   const hv=document.getElementById('htfVal'); hv.className='htf-val '+(ind.htfSpike?'on':'off');
   hv.textContent=ind.htfSpike?'✅ SPIKE':'❌ NO';
   document.getElementById('spikeMultLbl').textContent=S.settings.spikeMult.toFixed(1);
@@ -1809,6 +1862,15 @@ function updateLeftPanel(ind, cur) {
   const ciC=document.getElementById('ciC'); ciC.textContent=fmtPx(cur2.close,S.currentTicker);
   ciC.style.color=cur2.close>=cur2.open?'var(--bull)':'var(--bear)';
   document.getElementById('ciV').textContent=fmt(cur2.volume);
+  // ── Pine v6 new metrics ───────────────────────────────────────
+  const imbEl=document.getElementById('mImbalance');
+  if(imbEl){ const pct=(ind.imbalance*100).toFixed(1); imbEl.textContent=(ind.imbalance>=0?'+':'')+pct+'%'; imbEl.className='mc-v '+(ind.imbalance>0.3?'bull':ind.imbalance<-0.3?'bear':'amber'); }
+  const cvdEl=document.getElementById('mCVD');
+  if(cvdEl){ cvdEl.textContent=(ind.sessionCVD>=0?'▲ ':' ▼')+fmt(Math.abs(ind.sessionCVD)); cvdEl.className='mc-v '+(ind.sessionCVD>=0?'bull':'bear'); }
+  const vwapEl=document.getElementById('vwapVal');
+  if(vwapEl && ind.vwap){ vwapEl.textContent=fmtPx(ind.vwap,S.currentTicker); vwapEl.className='htf-val '+(cur2.close>ind.vwap?'bull':'bear'); }
+  const mktEl=document.getElementById('mktStateVal');
+  if(mktEl){ const mc={ABSORB:'amber',ACCUM:'bull',DISTR:'bear','—':'off'}; mktEl.textContent=ind.marketState; mktEl.className='htf-val '+(mc[ind.marketState]||'off'); }
 }
 function setFlag2(rid,vid,val,isWarn){const el=document.getElementById(rid);el.className='flag-c'+(val?(isWarn?' warn':' on'):'');document.getElementById(vid).textContent=val?'TRUE':'FALSE';}
 
@@ -1996,6 +2058,8 @@ function drawCandleChart() {
   for(let i=0;i<=5;i++){const gy=PAD.t+cH*i/5;ctx.strokeStyle='rgba(31,42,62,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.5)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmtPx(pxMax-pRange*i/5,S.currentTicker),W-PAD.r+4,gy+3);}
   // EMA
   if(S._e50&&S._e50.length>=bars.length){[{d:S._e50.slice(-vn),c:'rgba(245,166,35,.7)',lw:1.2},{d:(S._e200||[]).slice(-vn),c:'rgba(74,124,220,.7)',lw:1.5}].forEach(({d,c,lw})=>{if(!d.length)return;ctx.beginPath();ctx.strokeStyle=c;ctx.lineWidth=lw;d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();});}
+  // VWAP (teal dashed)
+  if(S._vwap&&S._vwap.length>=bars.length){const vd=S._vwap.slice(-vn);ctx.beginPath();ctx.strokeStyle='rgba(0,196,160,.85)';ctx.lineWidth=1.2;ctx.setLineDash([4,3]);vd.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(0,196,160,.75)';ctx.font="7px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText('VWAP '+fmtPx(vd[vd.length-1],S.currentTicker),W-PAD.r+4,toY(vd[vd.length-1])+3);}
   // candles
   visible.forEach((bar,i)=>{
     // Focus engine: fade distant bars when focus mode is on
@@ -2066,6 +2130,8 @@ function drawFlowChart() {
       d.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();
     });
   }
+  // VWAP (teal dashed)
+  if(S._vwap&&S._vwap.length>=bars.length){const vd=S._vwap.slice(-vn);ctx.beginPath();ctx.strokeStyle='rgba(0,196,160,.7)';ctx.lineWidth=1.2;ctx.setLineDash([4,3]);vd.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW,y=toY(v);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();ctx.setLineDash([]);}
 
   const maxDelta=Math.max(...visible.map(b=>Math.abs(b.delta)),1);
 
@@ -2157,6 +2223,16 @@ function drawDeltaChart() {
   const zeroY=PAD.t+cH*.5;const toY=v=>zeroY-(v/maxD)*(cH/2);const bW=cW/vn;
   for(let i=0;i<=4;i++){const gy=PAD.t+cH*i/4;ctx.strokeStyle='rgba(31,42,62,.5)';ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(PAD.l,gy);ctx.lineTo(W-PAD.r,gy);ctx.stroke();ctx.fillStyle='rgba(107,132,168,.4)';ctx.font="8px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText(fmt(maxD*(1-2*(i/4))),W-PAD.r+4,gy+3);}
   ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(PAD.l,zeroY);ctx.lineTo(W-PAD.r,zeroY);ctx.stroke();ctx.setLineDash([]);
+  // CVD line overlay (aqua positive, orange negative)
+  if(S._cvdArr&&S._cvdArr.length>=bars.length){
+    const cvdVis=S._cvdArr.slice(-vn);const cvdMax=Math.max(...cvdVis.map(Math.abs))*1.1||1;
+    const cvdY=v=>zeroY-(v/cvdMax)*(cH/2);
+    ctx.beginPath();ctx.lineWidth=1.5;
+    cvdVis.forEach((v,i)=>{const x=PAD.l+(i+.5)*bW;i===0?ctx.moveTo(x,cvdY(v)):ctx.lineTo(x,cvdY(v));});
+    ctx.strokeStyle='rgba(0,196,160,.7)'; ctx.stroke();
+    // label
+    const last=cvdVis[cvdVis.length-1];ctx.fillStyle='rgba(0,196,160,.75)';ctx.font="7px 'JetBrains Mono'";ctx.textAlign='left';ctx.fillText('CVD '+fmt(last),W-PAD.r+4,cvdY(last)+3);
+  }
   visible.forEach((bar,i)=>{const x=PAD.l+i*bW,bw=Math.max(1,bW-1),y=toY(bar.delta);
     if(bar.delta>=0){const g=ctx.createLinearGradient(0,y,0,zeroY);g.addColorStop(0,'rgba(34,214,142,.85)');g.addColorStop(1,'rgba(34,214,142,.15)');ctx.fillStyle=g;ctx.fillRect(x,y,bw,zeroY-y);}
     else{const g=ctx.createLinearGradient(0,zeroY,0,y);g.addColorStop(0,'rgba(240,73,104,.15)');g.addColorStop(1,'rgba(240,73,104,.85)');ctx.fillStyle=g;ctx.fillRect(x,zeroY,bw,y-zeroY);}});
@@ -2203,13 +2279,14 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','backtest','portfolio','alerts','settings'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
+  ['trades','backtest','portfolio','alerts','settings','guide'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettingsWithStrategies();return;}
   if(tab==='alerts'){renderAlerts();return;}
   if(tab==='trades'){renderTrades();return;}
   if(tab==='backtest'){renderBacktest();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
+  if(tab==='guide'){renderGuide();return;}
 }
 function setView(v){
   resetChartState();S.currentView=v;
@@ -3179,6 +3256,91 @@ function toggleStrategy(idx) {
     S._stratSignals = strategyEngine.evaluate(S.bars, S.lastInd);
   }
   logAlert('info', `Strategy "${s.name}" ${s.enabled?'enabled':'disabled'}`);
+}
+
+// ══════════════════════════════════════════════════════════════
+// GUIDE — reading guide for Order Flow Volume Suite ELITE
+// ══════════════════════════════════════════════════════════════
+function renderGuide() {
+  document.getElementById('rpContent').innerHTML = `
+<div style="padding:10px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx2);overflow-y:auto;max-height:100%;line-height:1.55">
+<div style="color:var(--teal);font-size:12px;font-weight:700;margin-bottom:8px;letter-spacing:.05em">ORDER FLOW VOLUME SUITE — READING GUIDE</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">TREND STATE</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">▲ BULL</span> — EMA50 &gt; EMA200 <em>and</em> price above VWAP. High-probability long bias.<br>
+  <span style="color:var(--bear)">▼ BEAR</span> — EMA50 &lt; EMA200 <em>and</em> price below VWAP. High-probability short bias.<br>
+  <span style="color:var(--amber)">◆ RANGE</span> — Mixed signals. Trend is ambiguous; reduce size or wait for clarity.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">ENTRY SIGNALS</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">LONG</span> — All 5 conditions met: Bull Trend + HTF Volume Spike + Divergence/Accumulation + No Exhaustion + Above-avg Vol.<br>
+  <span style="color:var(--bear)">SHORT</span> — Same 5 conditions, Bear Trend side. Uses <em>bearTrend</em> (not just !bullTrend) for tighter filtering.<br>
+  Signals fire on confirmed bars only; avoid trading against the VWAP anchor.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">SESSION CVD</div>
+<div style="margin-bottom:6px">
+  Cumulative Volume Delta resets each trading day (UTC midnight). Measures net buying vs selling pressure for the session.<br>
+  <span style="color:var(--bull)">▲ Rising CVD</span> = buyers absorbing supply. <span style="color:var(--bear)">▼ Falling CVD</span> = sellers pressing down.<br>
+  Divergence between price and CVD often precedes reversals.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">BAR IMBALANCE</div>
+<div style="margin-bottom:6px">
+  Normalized delta = delta ÷ volume. Range [−1, +1].<br>
+  <span style="color:var(--bull)">&gt;+0.3</span> = strong buy-side pressure on this bar.<br>
+  <span style="color:var(--bear)">&lt;−0.3</span> = strong sell-side pressure.<br>
+  Values near 0 indicate balanced two-sided flow (absorption zone).
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">MARKET STATE</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--amber)">ABSORB</span> — High volume, small body. Institutional absorption; potential reversal or continuation after pause.<br>
+  <span style="color:var(--bull)">ACCUM</span> — Buyers dominating on a down-close bar. Hidden accumulation below resistance.<br>
+  <span style="color:var(--bear)">DISTR</span> — Sellers dominating on an up-close bar. Hidden distribution near highs.<br>
+  <span style="color:var(--tx3)">—</span> — No notable market microstructure event on this bar.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">DIVERGENCE (PINE v6 LOGIC)</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">Bull Div</span> — Price prints a new pivot low <em>below</em> the prior pivot low, but delta is improving (less selling). Bullish divergence.<br>
+  <span style="color:var(--bear)">Bear Div</span> — Price prints a new pivot high <em>above</em> the prior pivot high, but delta is weakening (less buying). Bearish divergence.<br>
+  Checked 5-bar pivot windows vs 11-bar lookback.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">EXHAUSTION (TIGHTER v6)</div>
+<div style="margin-bottom:6px">
+  <span style="color:var(--bull)">Bull Exhaust</span> — Positive delta but bearish close (close &lt; open, close ≤ prev close, small body, above-avg volume). Buying effort failing.<br>
+  <span style="color:var(--bear)">Bear Exhaust</span> — Negative delta but bullish close (close &gt; open, close ≥ prev close, small body, above-avg volume). Selling effort failing.<br>
+  Added <em>above-avg volume</em> + close-direction filters vs v5 to reduce false signals.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">VWAP LINE (CHART)</div>
+<div style="margin-bottom:6px">
+  <span style="color:#00c4a0">Teal dashed line</span> on the price chart. Session-reset daily.<br>
+  Price above VWAP = buyers in control for the day. Below = sellers in control.<br>
+  Used as primary trend filter in combination with EMA cross.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">CVD LINE (DELTA CHART)</div>
+<div style="margin-bottom:6px">
+  <span style="color:#00c4a0">Teal line</span> overlaid on the delta bar chart. Shows cumulative net delta for the current session.<br>
+  Sloping up = sustained buying pressure. Sloping down = sustained selling. Flat = balanced market.
+</div>
+
+<div style="color:var(--tx1);font-size:10px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:3px">CONFIDENCE SCORE</div>
+<div style="margin-bottom:6px">
+  5 conditions scored: Trend, HTF Spike, Divergence/Accum, No Exhaustion, Above-Avg Vol.<br>
+  5/5 = max confidence long/short. 4/5 = high. 3/5 = moderate. ≤2 = no trade.
+</div>
+
+<div style="color:var(--tx3);font-size:9px;margin-top:12px;border-top:1px solid var(--bd);padding-top:6px">
+  Order Flow Volume Suite ELITE [v6 Multi-TF] — Ported from Pine Script v6.<br>
+  For educational purposes. Not financial advice.
+</div>
+</div>`;
 }
 
 // ══════════════════════════════════════════════════════════════
