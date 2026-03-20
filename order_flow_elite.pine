@@ -1,0 +1,285 @@
+//@version=6
+indicator("Order Flow Volume Suite ELITE [v6 Multi-TF]", overlay=false, max_bars_back=500)
+
+// =====================================================
+// Input Groups
+// =====================================================
+grpCore   = "Core Settings"
+grpTrend  = "Trend Regime"
+grpFilter = "Entry Filters"
+grpHTF    = "HTF Settings"
+grpViz    = "Visualization"
+
+// =====================================================
+// Inputs
+// =====================================================
+length    = input.int(20,   "Volume MA Length",  minval=1,        group=grpCore)
+spikeMult = input.float(2.0,"Spike Multiplier",  step=0.1,        group=grpHTF)
+htf       = input.timeframe("D", "HTF Timeframe",                 group=grpHTF)
+emaFastL  = input.int(50,  "Fast EMA",           minval=1,        group=grpTrend)
+emaSlowL  = input.int(200, "Slow EMA",           minval=1,        group=grpTrend)
+rsiLen    = input.int(14,  "RSI Length",         minval=2,        group=grpFilter)
+rsiOB     = input.int(65,  "RSI Overbought",     minval=50,       group=grpFilter)
+rsiOS     = input.int(35,  "RSI Oversold",       maxval=50,       group=grpFilter)
+showBG    = input.bool(true,"Show Trend BG",                      group=grpViz)
+
+// =====================================================
+// Trend Regime  (VWAP primary + EMA secondary)
+// =====================================================
+emaFast      = ta.ema(close, emaFastL)
+emaSlow      = ta.ema(close, emaSlowL)
+[vwap, _, _] = ta.vwap(hlc3, ta.change(time("D")) != 0, 1)
+bullTrend    = close > vwap and emaFast > emaSlow
+bearTrend    = close < vwap and emaFast < emaSlow
+trendState   = bullTrend ? "BULL" : bearTrend ? "BEAR" : "RANGE"
+trendColor   = bullTrend ? color.lime : bearTrend ? color.red : color.gray
+
+// Trend background (indicator pane)
+bgcolor(showBG and bullTrend ? color.new(color.green, 92) :
+        showBG and bearTrend ? color.new(color.red,   92) : na,
+        title="Trend Background")
+
+// =====================================================
+// Core Volume & Delta
+// =====================================================
+vol       = volume
+volMA     = ta.sma(vol, length)
+volRatio  = volMA != 0 ? vol / volMA * 100 : 0.0
+barRange  = math.max(high - low, syminfo.mintick)
+buyVol    = vol * (close - low)  / barRange
+sellVol   = vol * (high - close) / barRange
+delta     = buyVol - sellVol
+buyDol    = buyVol  * close
+sellDol   = sellVol * close
+
+// Normalised imbalance: +1 = full buy, -1 = full sell
+imbalance = vol != 0 ? delta / vol : 0.0
+
+// =====================================================
+// Cumulative Volume Delta (session-reset)
+// FIX: simplified if/else to ternary; same logic, no ambiguity
+// =====================================================
+newSession = ta.change(time("D")) != 0
+var float cvd = 0.0
+cvd := newSession ? delta : cvd + delta
+
+// =====================================================
+// Session Cumulative Dollar Flow
+// FIX: same simplification as CVD
+// =====================================================
+var float cumBuy  = 0.0
+var float cumSell = 0.0
+cumBuy  := newSession ? buyDol  : cumBuy  + buyDol
+cumSell := newSession ? sellDol : cumSell + sellDol
+totalCum  = cumBuy + cumSell
+dominance = totalCum != 0 ? cumBuy / totalCum * 100 : 50.0
+
+// =====================================================
+// RSI (used as entry filter)
+// =====================================================
+rsi = ta.rsi(close, rsiLen)
+
+// =====================================================
+// ATR (volatility context for dashboard)
+// =====================================================
+atr = ta.atr(14)
+
+// =====================================================
+// Absorption / Hidden Flow
+// =====================================================
+body          = math.abs(close - open)
+bodyAvg       = ta.sma(body, 20)
+aboveAvgVol   = vol > volMA
+absorption    = aboveAvgVol and vol > volMA * 1.8 and body < bodyAvg * 0.5
+hiddenAccum   = buyVol  > sellVol and close <= close[1] and aboveAvgVol
+hiddenDistrib = sellVol > buyVol  and close >= close[1] and aboveAvgVol
+
+// =====================================================
+// HTF Spike
+// FIX: combined two request.security() calls into one tuple
+// to halve the number of external data requests
+// =====================================================
+[htfVol, htfMA_raw] = request.security(syminfo.tickerid, htf,
+     [volume, ta.sma(volume, length)])
+htfSpike = htfVol > htfMA_raw * spikeMult
+
+// =====================================================
+// Divergence  (non-repainting via stored pivot reference values)
+//
+// BUG FIX (original): used `low < low[10]` and `delta > delta[5]`
+// which compared arbitrary bar offsets, NOT actual previous pivot
+// levels — producing incorrect and repainting signals.
+//
+// FIX: store the price and delta at each confirmed pivot bar, then
+// compare the *current* confirmed pivot to the *previous* stored one.
+// pivotlow/high with right=pivLen means the signal fires pivLen bars
+// AFTER the actual pivot, so [pivLen] indexes back to the pivot bar.
+// =====================================================
+pivLen = 5
+pl = ta.pivotlow(low,  pivLen, pivLen)
+ph = ta.pivothigh(high, pivLen, pivLen)
+
+var float prevPivotLow       = na
+var float prevPivotLowDelta  = na
+var float prevPivotHigh      = na
+var float prevPivotHighDelta = na
+
+// Values at the confirmed pivot bar (pivLen bars ago)
+pivLowPrice   = not na(pl) ? low[pivLen]   : na
+pivLowDelta   = not na(pl) ? delta[pivLen] : na
+pivHighPrice  = not na(ph) ? high[pivLen]  : na
+pivHighDelta  = not na(ph) ? delta[pivLen] : na
+
+// Bull div: lower price low but higher delta (buyers absorbing the sell-off)
+bullDiv = false
+if not na(pl) and not na(prevPivotLow)
+    bullDiv := pivLowPrice < prevPivotLow and pivLowDelta > prevPivotLowDelta
+
+// Bear div: higher price high but lower delta (sellers distributing into strength)
+bearDiv = false
+if not na(ph) and not na(prevPivotHigh)
+    bearDiv := pivHighPrice > prevPivotHigh and pivHighDelta < prevPivotHighDelta
+
+// Update stored reference AFTER using it (so we compare new pivot vs previous)
+if not na(pl)
+    prevPivotLow      := pivLowPrice
+    prevPivotLowDelta := pivLowDelta
+if not na(ph)
+    prevPivotHigh      := pivHighPrice
+    prevPivotHighDelta := pivHighDelta
+
+// =====================================================
+// Exhaustion  (above-avg vol + price disagrees with delta)
+// =====================================================
+bullExhaust = aboveAvgVol and delta > 0  and close < open and body < bodyAvg
+bearExhaust = aboveAvgVol and delta < 0  and close > open and body < bodyAvg
+
+// =====================================================
+// ENTRY / EXIT  (confirmed bar only → no repaint)
+// IMPROVEMENT: added RSI filter to avoid entries at momentum extremes
+// =====================================================
+longEntry  = barstate.isconfirmed and bullTrend and htfSpike and rsi < rsiOB and (bullDiv or hiddenAccum)
+shortEntry = barstate.isconfirmed and bearTrend and htfSpike and rsi > rsiOS and (bearDiv or hiddenDistrib)
+longExit   = barstate.isconfirmed and (bearExhaust or bearDiv)
+shortExit  = barstate.isconfirmed and (bullExhaust or bullDiv)
+
+// =====================================================
+// Alerts
+// =====================================================
+alertcondition(longEntry,  "Long Entry",  "Order Flow Elite: Long Entry Detected")
+alertcondition(shortEntry, "Short Entry", "Order Flow Elite: Short Entry Detected")
+alertcondition(longExit,   "Long Exit",   "Order Flow Elite: Long Exit Detected")
+alertcondition(shortExit,  "Short Exit",  "Order Flow Elite: Short Exit Detected")
+alertcondition(absorption, "Absorption",  "Order Flow Elite: Volume Absorption Detected")
+
+// =====================================================
+// Plots
+// =====================================================
+// Volume delta columns
+plot(buyVol,   "Buy Vol",  color=color.new(color.lime, 20), style=plot.style_columns)
+plot(-sellVol, "Sell Vol", color=color.new(color.red,  20), style=plot.style_columns)
+plot(volMA,    "Vol MA",   color=color.new(color.gray, 50), linewidth=2)
+
+// CVD line
+cvdColor = cvd >= 0 ? color.new(color.aqua, 20) : color.new(color.orange, 20)
+plot(cvd, "CVD", color=cvdColor, linewidth=2)
+
+// Zero line reference
+hline(0, "Zero", color=color.new(color.white, 70), linestyle=hline.style_dotted)
+
+// Entry / exit signals (confirmed, no repaint)
+plotshape(longEntry,  style=shape.arrowup,   location=location.bottom, color=color.lime,   size=size.small, title="Long Entry",  text="LONG")
+plotshape(shortEntry, style=shape.arrowdown, location=location.top,    color=color.red,    size=size.small, title="Short Entry", text="SHORT")
+plotshape(longExit,   style=shape.xcross,    location=location.top,    color=color.orange, size=size.tiny,  title="Long Exit")
+plotshape(shortExit,  style=shape.xcross,    location=location.bottom, color=color.orange, size=size.tiny,  title="Short Exit")
+
+// Exhaustion warning dots
+plotshape(bullExhaust and not longEntry,  style=shape.circle, location=location.bottom, color=color.new(color.yellow, 40), size=size.tiny, title="Bull Exhaust Warning")
+plotshape(bearExhaust and not shortEntry, style=shape.circle, location=location.top,    color=color.new(color.yellow, 40), size=size.tiny, title="Bear Exhaust Warning")
+
+// Divergence markers (new)
+plotshape(bullDiv, style=shape.triangleup,   location=location.bottom, color=color.new(color.teal,    20), size=size.tiny, title="Bull Divergence")
+plotshape(bearDiv, style=shape.triangledown, location=location.top,    color=color.new(color.fuchsia, 20), size=size.tiny, title="Bear Divergence")
+
+// =====================================================
+// Helpers
+// =====================================================
+formatVolume(float v) =>
+    v >= 1e12 ? str.tostring(v / 1e12, "0.00") + "T" :
+     v >= 1e9  ? str.tostring(v / 1e9,  "0.00") + "B" :
+     v >= 1e6  ? str.tostring(v / 1e6,  "0.00") + "M" :
+     v >= 1e3  ? str.tostring(v / 1e3,  "0.00") + "K" :
+                 str.tostring(v, "0")
+
+// =====================================================
+// Dashboard  (12 rows: 1 header + 11 data rows)
+// =====================================================
+var table t = table.new(position.bottom_right, 2, 12,
+     bgcolor=color.new(color.black, 60),
+     border_width=1, border_color=color.gray)
+
+if barstate.islast
+    table.clear(t, 0, 0, 1, 11)
+    S = size.small
+    N = size.normal
+
+    // Header
+    table.cell(t, 0, 0, "📊 ORDER FLOW ELITE", text_color=color.white,  text_size=N, bgcolor=color.new(color.blue, 35))
+    table.cell(t, 1, 0, syminfo.tickerid,        text_color=color.silver, text_size=S, bgcolor=color.new(color.blue, 35))
+
+    // Trend
+    table.cell(t, 0, 1, "Trend",    text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 1, trendState, text_color=trendColor,  text_size=S, bgcolor=color.new(color.black, 70))
+
+    // Vol vs Avg
+    volColor = volRatio > 200 ? color.yellow : volRatio > 150 ? color.orange : color.white
+    table.cell(t, 0, 2, "Vol vs Avg",                      text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 2, str.tostring(volRatio, "0") + "%", text_color=volColor,   text_size=S, bgcolor=color.new(color.black, 70))
+
+    // Buy $ | Sell $
+    table.cell(t, 0, 3, "Buy $ | Sell $",                                    text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 3, formatVolume(buyDol) + " | " + formatVolume(sellDol), text_color=color.white, text_size=S, bgcolor=color.new(color.black, 70))
+
+    // Imbalance
+    imbColor = imbalance > 0.2 ? color.lime : imbalance < -0.2 ? color.red : color.orange
+    imbText  = str.tostring(imbalance * 100, "0.0") + "%"
+    table.cell(t, 0, 4, "Bar Imbalance", text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 4, imbText,          text_color=imbColor,   text_size=S, bgcolor=color.new(color.black, 70))
+
+    // CVD
+    cvdTxt   = formatVolume(math.abs(cvd))
+    cvdLabel = cvd >= 0 ? "▲ " + cvdTxt : "▼ " + cvdTxt
+    cvdCol   = cvd >= 0 ? color.aqua : color.orange
+    table.cell(t, 0, 5, "Session CVD", text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 5, cvdLabel,      text_color=cvdCol,      text_size=S, bgcolor=color.new(color.black, 70))
+
+    // Dominance
+    domColor = dominance > 60 ? color.lime : dominance < 40 ? color.red : color.orange
+    domText  = dominance > 55 ? "BULL " : dominance < 45 ? "BEAR " : "NEUT "
+    table.cell(t, 0, 6, "Dominance",                                               text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 6, domText + str.tostring(dominance, "0") + "%", text_color=domColor, text_size=S, bgcolor=color.new(color.black, 70))
+
+    // RSI (new row)
+    rsiColor = rsi > rsiOB ? color.red : rsi < rsiOS ? color.lime : color.white
+    table.cell(t, 0, 7, "RSI(" + str.tostring(rsiLen) + ")", text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 7, str.tostring(rsi, "0.0"),             text_color=rsiColor,    text_size=S, bgcolor=color.new(color.black, 70))
+
+    // HTF Spike
+    table.cell(t, 0, 8, "HTF Spike",                                                   text_color=color.white,                      text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 8, htfSpike ? "✅ YES" : "❌ NO", text_color=htfSpike ? color.yellow : color.gray, text_size=S, bgcolor=color.new(color.black, 70))
+
+    // Market State (Absorption / Hidden)
+    mktState = absorption ? "ABSORB" : hiddenAccum ? "ACCUM" : hiddenDistrib ? "DISTR" : "—"
+    mktCol   = absorption ? color.yellow : hiddenAccum ? color.lime : hiddenDistrib ? color.red : color.gray
+    table.cell(t, 0, 9, "Market State", text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 9, mktState,        text_color=mktCol,     text_size=S, bgcolor=color.new(color.black, 70))
+
+    // ATR (new row — volatility context)
+    table.cell(t, 0, 10, "ATR(14)",                    text_color=color.white, text_size=S, bgcolor=color.new(color.gray, 50))
+    table.cell(t, 1, 10, str.tostring(atr, "0.0000"),  text_color=color.white, text_size=S, bgcolor=color.new(color.black, 70))
+
+    // Signal
+    sigText  = longEntry ? "🟢 LONG" : shortEntry ? "🔴 SHORT" : longExit ? "🟠 EXIT L" : shortExit ? "🟠 EXIT S" : "⚪ WAIT"
+    sigColor = longEntry ? color.lime : shortEntry ? color.red : (longExit or shortExit) ? color.orange : color.gray
+    table.cell(t, 0, 11, "Signal", text_color=color.white, text_size=S, bgcolor=color.new(color.blue, 35))
+    table.cell(t, 1, 11, sigText,  text_color=sigColor,    text_size=N, bgcolor=color.new(color.black, 50))
