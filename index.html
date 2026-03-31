@@ -700,7 +700,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   <div class="ft-item"><div class="ft-n">BARS</div><div class="ft-v" id="ftBars" style="color:var(--amber)">0</div></div>
   <div class="ft-status" id="ftStatus" style="color:var(--tx3)">INITIALIZING</div>
   <div class="ft-last-upd" id="ftLastUpd"></div>
-  <div style="margin-left:12px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)" id="pollTimer">NEXT: —</div>
+  <div style="margin-left:12px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx3)" id="pollTimerFooter">NEXT: —</div>
   <div id="wsLiveBadge" style="display:none;margin-left:10px" class="ws-live"><span class="ws-dot"></span>WS LIVE</div>
   <span id="latencyBadge"></span>
 </div>
@@ -1056,10 +1056,53 @@ const ts = () => { const d=new Date(); return [d.getHours(),d.getMinutes(),d.get
 const ema = (data,p) => { const k=2/(p+1); return data.reduce((acc,v,i)=>{acc.push(i===0?v:v*k+acc[i-1]*(1-k));return acc;},[]);};
 // Sliding-window O(n) SMA — avoids O(n·p) slice+reduce per element
 const sma = (arr,p) => { const out=new Array(arr.length).fill(null); let sum=0; for(let i=0;i<arr.length;i++){sum+=arr[i];if(i>=p)sum-=arr[i-p];if(i>=p-1)out[i]=sum/p;} return out; };
+// RSI — Wilder's smoothing, matches Pine Script ta.rsi()
+function calcRSI(closes, period) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return out;
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) avgGain += diff; else avgLoss -= diff;
+  }
+  avgGain /= period; avgLoss /= period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
 // Session-reset VWAP — shared by runIndicators() and computeIndicatorsForBars()
 function calcSessionVWAP(bars){const arr=[];let cumPV=0,cumV=0,lastDay=-1;for(const bar of bars){const day=Math.floor(bar.time/86400000);if(day!==lastDay&&lastDay!==-1){cumPV=0;cumV=0;}lastDay=day;const hlc3=(bar.high+bar.low+bar.close)/3;cumPV+=hlc3*bar.volume;cumV+=bar.volume;arr.push(cumV>0?cumPV/cumV:bar.close);}return arr;}
 // Cumulative dollar volume — single source of truth used in 5 load paths
-function recalcCumVolume(){S.cumBuy=S.bars.reduce((a,b)=>a+b.buyDol,0);S.cumSell=S.bars.reduce((a,b)=>a+b.sellDol,0);}
+// Incremental cumulative dollar volume:
+// Full recalc only on ticker switch (when _cumN resets to 0).
+// On WS ticks / polls: only adjust for the last bar's changed values.
+function recalcCumVolume() {
+  const bars = S.bars, n = bars.length;
+  if (!n) { S.cumBuy = 0; S.cumSell = 0; S._cumN = 0; S._cumLastBuy = 0; S._cumLastSell = 0; return; }
+  if (S._cumN === n) {
+    // Same bar count — last bar updated in-place; adjust delta
+    const last = bars[n - 1];
+    S.cumBuy  += last.buyDol  - (S._cumLastBuy  || 0);
+    S.cumSell += last.sellDol - (S._cumLastSell || 0);
+    S._cumLastBuy = last.buyDol; S._cumLastSell = last.sellDol;
+  } else if (S._cumN > 0 && n === S._cumN + 1) {
+    // One new bar appended — add it
+    const last = bars[n - 1];
+    S.cumBuy  += last.buyDol;
+    S.cumSell += last.sellDol;
+    S._cumN = n; S._cumLastBuy = last.buyDol; S._cumLastSell = last.sellDol;
+  } else {
+    // Full recalc (initial load, ticker switch, or bar shift)
+    S.cumBuy = 0; S.cumSell = 0;
+    for (let i = 0; i < n; i++) { S.cumBuy += bars[i].buyDol; S.cumSell += bars[i].sellDol; }
+    S._cumN = n; S._cumLastBuy = bars[n - 1].buyDol; S._cumLastSell = bars[n - 1].sellDol;
+  }
+}
 // HTML entity encoder — prevents XSS when inserting user-supplied strings into innerHTML
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
@@ -1102,7 +1145,7 @@ function filterDropdown(q) {
 function renderDropdown(list, q='') {
   const body = document.getElementById('ddBody');
   if (list.length === 0) {
-    body.innerHTML = `<div style="padding:20px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx3);grid-column:1/-1">No results for "${q}"</div>`;
+    body.innerHTML = `<div style="padding:20px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--tx3);grid-column:1/-1">No results for "${esc(q)}"</div>`;
     return;
   }
   // If no search, group by category
@@ -1194,7 +1237,7 @@ async function fetchDropdownPrices() {
           if (el) { el.className='dd-change '+(chg>=0?'pos':'neg'); el.textContent=fmtP(chg); }
         });
       }
-    } catch(_) {}
+    } catch(e) { if (e.name !== 'AbortError') logAlert('info', 'Binance dropdown price error: ' + e.message); }
   }
 
   // ── Concurrent Yahoo Finance: groups of 5, one promise per ticker ─
@@ -1213,7 +1256,7 @@ async function fetchDropdownPrices() {
       S.tickerPrices[t.sym] = { chg };
       const el = document.getElementById('ddp-' + t.sym);
       if (el) { el.className='dd-change '+(chg>=0?'pos':'neg'); el.textContent=fmtP(chg); }
-    } catch(_) {}
+    } catch(e) { if (e.name !== 'AbortError') logAlert('info', 'Yahoo dropdown price error: ' + e.message); }
   }
 
   for (let i = 0; i < stockTickers.length; i += CONCURRENCY) {
@@ -1226,8 +1269,41 @@ async function fetchDropdownPrices() {
 // ═══════════════════════════════════════════
 
 // TF map for Yahoo Finance
-const YF_INTERVAL = { '1m':'1m','5m':'5m','15m':'15m','1h':'60m','4h':'1h','1d':'1d' };
+// Note: Yahoo Finance has no native 4h interval; we fetch 1h data and aggregate client-side
+const YF_INTERVAL = { '1m':'1m','5m':'5m','15m':'15m','1h':'60m','4h':'60m','1d':'1d' };
 const YF_RANGE    = { '1m':'1d','5m':'5d','15m':'5d','1h':'60d','4h':'60d','1d':'1y' };
+
+// Aggregate 1h bars into 4h bars (used when Yahoo doesn't support native 4h)
+function aggregate4hBars(bars) {
+  if (!bars.length) return bars;
+  const out = [];
+  let bucket = null;
+  for (const b of bars) {
+    // 4h bucket boundary: floor to nearest 4-hour block (0,4,8,12,16,20 UTC)
+    const d = new Date(b.time);
+    const bucketHour = Math.floor(d.getUTCHours() / 4) * 4;
+    const bucketTime = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), bucketHour)).getTime();
+    if (!bucket || bucket.time !== bucketTime) {
+      if (bucket) out.push(bucket);
+      bucket = { time:bucketTime, open:b.open, high:b.high, low:b.low, close:b.close,
+        volume:b.volume, buyVol:b.buyVol, sellVol:b.sellVol, delta:b.delta,
+        buyDol:b.buyDol, sellDol:b.sellDol, body:0 };
+    } else {
+      bucket.high = Math.max(bucket.high, b.high);
+      bucket.low  = Math.min(bucket.low, b.low);
+      bucket.close = b.close;
+      bucket.volume += b.volume;
+      bucket.buyVol += b.buyVol;
+      bucket.sellVol += b.sellVol;
+      bucket.delta += b.delta;
+      bucket.buyDol += b.buyDol;
+      bucket.sellDol += b.sellDol;
+    }
+    bucket.body = Math.abs(bucket.close - bucket.open);
+  }
+  if (bucket) out.push(bucket);
+  return out;
+}
 
 async function loadCurrentTicker() {
   if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
@@ -1297,22 +1373,13 @@ async function fetchBinance(binanceSym, signal) {
       if (!r.ok) continue;
       const data = await r.json();
       if (!Array.isArray(data) || data.length < 5) continue;
-      S.bars = data.map(k => {
-        const o=+k[1],h=+k[2],l=+k[3],c=+k[4];
-        const vol=+k[5], takerBuy=+k[9];
-        const takerSell=vol-takerBuy;
-        const rng=Math.max(h-l,c*0.00001);
-        return { time:+k[0],open:o,high:h,low:l,close:c,volume:vol,
-          buyVol:takerBuy, sellVol:takerSell,
-          delta:takerBuy-takerSell, buyDol:takerBuy*c, sellDol:takerSell*c,
-          body:Math.abs(c-o) };
-      });
+      S.bars = data.map(_mapBinanceBar);
       recalcCumVolume();
       updateAssetBar24h_Binance(binanceSym);
       setSrcBadge('BINANCE','bull');
       logAlert('info',`✓ Binance: ${S.bars.length} bars for ${binanceSym}`);
       return true;
-    } catch(_) {}
+    } catch(e) { if (e.name !== 'AbortError') logAlert('info', `Binance fetch error: ${e.message}`); }
   }
   return false;
 }
@@ -1335,25 +1402,16 @@ async function fetchYahoo(sym, signal) {
       const ts2 = result.timestamp || [];
       const q   = result.indicators?.quote?.[0] || {};
       if (!ts2.length) continue;
-      S.bars = ts2.map((t,i) => {
-        const o=q.open?.[i]||0, h=q.high?.[i]||0, l=q.low?.[i]||0, c=q.close?.[i]||0;
-        const vol=q.volume?.[i]||0;
-        if (!c) return null;
-        const rng = Math.max(h-l, c*0.00001);
-        // Approximate buy/sell split from price range (Pine Script method)
-        const buyVol  = vol * (c - l) / rng;
-        const sellVol = vol * (h - c) / rng;
-        return { time:t*1000,open:o,high:h,low:l,close:c,volume:vol,
-          buyVol, sellVol, delta:buyVol-sellVol,
-          buyDol:buyVol*c, sellDol:sellVol*c, body:Math.abs(c-o) };
-      }).filter(Boolean);
+      S.bars = ts2.map((t,i) => _mapYahooBar(t, q, i)).filter(Boolean);
+      // Aggregate 1h → 4h when Yahoo can't provide native 4h candles
+      if (S.currentTF === '4h') S.bars = aggregate4hBars(S.bars);
       if (S.bars.length < 5) continue;
       recalcCumVolume();
       updateAssetBar_Yahoo(result, sym);
       setSrcBadge('YAHOO FINANCE','teal');
       logAlert('info',`✓ Yahoo: ${S.bars.length} bars for ${sym}`);
       return true;
-    } catch(_) {}
+    } catch(e) { if (e.name !== 'AbortError') logAlert('info', `Yahoo fetch error: ${e.message}`); }
   }
   return false;
 }
@@ -1375,8 +1433,7 @@ function startWebSocket(binanceSym, retryDelay) {
     document.getElementById('wsLiveBadge').style.display = 'inline-flex';
     if (S.pollTimer)     { clearInterval(S.pollTimer);     S.pollTimer = null; }
     if (S._pollCountdown){ clearInterval(S._pollCountdown); S._pollCountdown = null; }
-    const pt = document.getElementById('pollTimer');
-    if (pt) pt.textContent = 'WS LIVE';
+    setPollTimerText('WS LIVE');
     setLive('on');
     updateLatencyBadge(0);
     logAlert('info', `⚡ WebSocket connected: ${binanceSym}`);
@@ -1387,7 +1444,9 @@ function startWebSocket(binanceSym, retryDelay) {
       if (!k) return;
       S._lastTickTime = Date.now();
       updateLatencyBadge(0);
-      const vol = +k.v, takerBuy = +k.Q;
+      // k.V = taker buy base asset volume (matches REST field [9])
+      // k.Q = taker buy quote asset volume (dollar-denominated — wrong unit)
+      const vol = +k.v, takerBuy = +k.V;
       const bar = {
         time: +k.t, open: +k.o, high: +k.h, low: +k.l, close: +k.c,
         volume: vol, buyVol: takerBuy, sellVol: vol - takerBuy,
@@ -1404,7 +1463,7 @@ function startWebSocket(binanceSym, retryDelay) {
       scheduleRedraw();
       checkPriceAlerts(bar.close);
       document.getElementById('ftLastUpd').textContent = 'WS ' + ts();
-    } catch(_) {}
+    } catch(e) { logAlert('info', 'WS message error: ' + e.message); }
   };
   ws.onclose = (ev) => {
     if (ws !== S.wsConn) return;
@@ -1445,6 +1504,18 @@ function _mapBinanceBar(k) {
     buyDol:takerBuy*c,sellDol:takerSell*c,body:Math.abs(c-o) };
 }
 
+// Shared Yahoo bar mapper — takes (timestamp_seconds, quote_object, index)
+function _mapYahooBar(t, q, i) {
+  const o=q.open?.[i]||0, h=q.high?.[i]||0, l=q.low?.[i]||0, c=q.close?.[i]||0;
+  const vol=q.volume?.[i]||0;
+  if (!c) return null;
+  const rng = Math.max(h-l, c*0.00001);
+  const buyVol = vol*(c-l)/rng, sellVol = vol*(h-c)/rng;
+  return { time:t*1000, open:o, high:h, low:l, close:c, volume:vol,
+    buyVol, sellVol, delta:buyVol-sellVol,
+    buyDol:buyVol*c, sellDol:sellVol*c, body:Math.abs(c-o) };
+}
+
 async function fetchBinancePoll(binanceSym) {
   // Fall back to full fetch if no bars yet (should not happen in normal flow)
   if (!S.bars.length) return fetchBinance(binanceSym);
@@ -1473,7 +1544,7 @@ async function fetchBinancePoll(binanceSym) {
       });
       recalcCumVolume();
       return true;
-    } catch(_) {}
+    } catch(e) { logAlert('info', `Binance poll error: ${e.message}`); }
   }
   return false;
 }
@@ -1501,13 +1572,8 @@ async function fetchYahooPoll(sym) {
       if (!ts2.length) continue;
       const lastTs = S.bars[S.bars.length - 1].time;
       ts2.forEach((t,i) => {
-        const o=q.open?.[i]||0,h=q.high?.[i]||0,l=q.low?.[i]||0,c=q.close?.[i]||0;
-        const vol=q.volume?.[i]||0;
-        if (!c) return;
-        const rng=Math.max(h-l,c*0.00001);
-        const buyVol=vol*(c-l)/rng, sellVol=vol*(h-c)/rng;
-        const bar={ time:t*1000,open:o,high:h,low:l,close:c,volume:vol,
-          buyVol,sellVol,delta:buyVol-sellVol,buyDol:buyVol*c,sellDol:sellVol*c,body:Math.abs(c-o) };
+        const bar = _mapYahooBar(t, q, i);
+        if (!bar) return;
         const last = S.bars[S.bars.length - 1];
         if (last && last.time === bar.time) {
           Object.assign(last, bar);
@@ -1518,7 +1584,7 @@ async function fetchYahooPoll(sym) {
       });
       recalcCumVolume();
       return true;
-    } catch(_) {}
+    } catch(e) { if (e.name !== 'AbortError') logAlert('info', 'Yahoo poll error: ' + e.message); }
   }
   return false;
 }
@@ -1530,16 +1596,25 @@ async function pollUpdate(t, isCrypto) {
   if (!ok) return; // silent — keep showing last good data
   runIndicators();
   scheduleRedraw();
+  // Check price alerts on REST polls (WS path already calls this)
+  if (S.bars.length) checkPriceAlerts(S.bars[S.bars.length - 1].close);
   document.getElementById('ftLastUpd').textContent = 'UPD ' + ts();
+}
+
+// Helper: update both poll timer displays (header + footer)
+function setPollTimerText(txt) {
+  const a = document.getElementById('pollTimer');
+  const b = document.getElementById('pollTimerFooter');
+  if (a) a.textContent = txt;
+  if (b) b.textContent = txt;
 }
 
 function startPollCountdown(secs) {
   let remaining = secs;
-  const el = document.getElementById('pollTimer');
   const iv = setInterval(() => {
     remaining--;
     if (remaining <= 0) { remaining = secs; }
-    el.textContent = `NEXT: ${remaining}s`;
+    setPollTimerText(`NEXT: ${remaining}s`);
   }, 1000);
   // Store ref to clear on reload
   S._pollCountdown = iv;
@@ -1558,7 +1633,7 @@ async function updateAssetBar24h_Binance(sym) {
     }
     const d = await r.json();
     fillAssetBar(+d.lastPrice, +d.priceChangePercent, +d.highPrice, +d.lowPrice, +d.quoteVolume, null);
-  } catch(_){}
+  } catch(e) { if (e.name !== 'AbortError') logAlert('info', 'Asset bar update error: ' + e.message); }
 }
 function updateAssetBar_Yahoo(result) {
   const meta = result.meta || {};
@@ -1638,12 +1713,16 @@ function computeIndicatorsForBars(bars, settings) {
   const marketState   = absorption?'ABSORB':hiddenAccum?'ACCUM':hiddenDistrib?'DISTR':'—';
   const totalCum = bars.reduce((a,b)=>a+b.buyDol,0) + bars.reduce((a,b)=>a+b.sellDol,0);
   const dominance = totalCum ? (bars.reduce((a,b)=>a+b.buyDol,0)/totalCum*100) : 50;
-  const longEntry  = bullTrend && htfSpike && (bullDiv||hiddenAccum) && !bullExhaust;
-  const shortEntry = bearTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
+  // RSI filter (matches Pine Script: rsi < rsiOB for longs, rsi > rsiOS for shorts)
+  const rsiArr = calcRSI(closes, 14);
+  const rsiVal = rsiArr[n-1] ?? 50;
+  const rsiOB = 65, rsiOS = 35;
+  const longEntry  = bullTrend && htfSpike && rsiVal < rsiOB && (bullDiv||hiddenAccum) && !bullExhaust;
+  const shortEntry = bearTrend && htfSpike && rsiVal > rsiOS && (bearDiv||hiddenDistrib) && !bearExhaust;
   const longExit   = bearExhaust || bearDiv;
   const shortExit  = bullExhaust || bullDiv;
   const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,aboveAvgVol].filter(Boolean).length;
-  return { bullTrend,bearTrend,trendState,vwap:vwap2,marketState,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit:longExit&&!longEntry,shortExit:shortExit&&!shortEntry,condScore,volMAn,volRatio:(cur.volume/volMAn)*100,e50,e200 };
+  return { bullTrend,bearTrend,trendState,vwap:vwap2,marketState,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit:longExit&&!longEntry,shortExit:shortExit&&!shortEntry,condScore,volMAn,volRatio:(cur.volume/volMAn)*100,e50,e200,rsi:rsiVal };
 }
 
 // ═══════════════════════════════════════════
@@ -1694,8 +1773,15 @@ function runIndicators() {
   const volMA = sma(vols, length), volMAn = volMA[n-1] || 1;
   const volRatio = (cur.volume / volMAn) * 100;
   const bodyMA = sma(bodies, 20), bodyMAn = bodyMA[n-1] || 1;
-  S.htfVols.push(vols.slice(-5).reduce((a,b)=>a+b,0));
-  if (S.htfVols.length > 60) S.htfVols.shift();
+  // Only push a new htfVols entry when a new bar actually appears;
+  // on WS updates to the current (forming) bar, update the last entry in-place.
+  const htfSum5 = vols.slice(-5).reduce((a,b)=>a+b,0);
+  if (n > S._prevBarCount || S.htfVols.length === 0) {
+    S.htfVols.push(htfSum5);
+    if (S.htfVols.length > 60) S.htfVols.shift();
+  } else if (S.htfVols.length > 0) {
+    S.htfVols[S.htfVols.length - 1] = htfSum5; // update in-place for current bar
+  }
   const htfMAv = S.htfVols.slice(-length).reduce((a,b)=>a+b,0) / Math.min(S.htfVols.length, length);
   const htfVol = S.htfVols[S.htfVols.length-1];
   const htfSpike = htfVol > htfMAv * spikeMult;
@@ -1727,15 +1813,19 @@ function runIndicators() {
   const marketState   = absorption?'ABSORB':hiddenAccum?'ACCUM':hiddenDistrib?'DISTR':'—';
   const totalCum = S.cumBuy + S.cumSell;
   const dominance = totalCum ? (S.cumBuy/totalCum*100) : 50;
-  const longEntry  = bullTrend && htfSpike && (bullDiv||hiddenAccum) && !bullExhaust;
-  const shortEntry = bearTrend && htfSpike && (bearDiv||hiddenDistrib) && !bearExhaust;
+  // ── RSI filter (Pine v6 parity: rsi < rsiOB for longs, rsi > rsiOS for shorts) ─
+  const rsiArr = calcRSI(closes, 14);
+  const rsiVal = rsiArr[n-1] ?? 50;
+  const rsiOB = 65, rsiOS = 35;
+  const longEntry  = bullTrend && htfSpike && rsiVal < rsiOB && (bullDiv||hiddenAccum) && !bullExhaust;
+  const shortEntry = bearTrend && htfSpike && rsiVal > rsiOS && (bearDiv||hiddenDistrib) && !bearExhaust;
   const longExit   = bearExhaust || bearDiv;
   const shortExit  = bullExhaust || bullDiv;
   const condScore  = [bullTrend,htfSpike,(bullDiv||hiddenAccum),!bullExhaust,aboveAvgVol].filter(Boolean).length;
   cur.longEntry=longEntry; cur.shortEntry=shortEntry;
   cur.longExit=longExit&&!longEntry; cur.shortExit=shortExit&&!shortEntry;
   S._e50=e50; S._e200=e200; S._volMA=volMA;
-  const ind = { e50,e200,bullTrend,bearTrend,trendState,vwap,sessionCVD,imbalance,marketState,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore };
+  const ind = { e50,e200,bullTrend,bearTrend,trendState,vwap,sessionCVD,imbalance,marketState,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore,rsi:rsiVal };
   S.lastInd = ind;
   updateLeftPanel(ind, cur);
   updatePnL(ind, cur);
@@ -2684,8 +2774,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     if (S.pollTimer)     { clearInterval(S.pollTimer);     S.pollTimer = null; }
     if (S._pollCountdown){ clearInterval(S._pollCountdown); S._pollCountdown = null; }
-    const el = document.getElementById('pollTimer');
-    if (el) el.textContent = 'PAUSED';
+    setPollTimerText('PAUSED');
   } else {
     // Tab became visible — reload fresh data immediately
     if (S.currentTicker && S.bars.length) loadCurrentTicker();
@@ -2921,12 +3010,12 @@ async function _doMTFFetch(){
       let bars=null;
       if (isCrypto) {
         const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${ticker.binance}&interval=${tf}&limit=60`);
-        if (r.ok){const d=await r.json();bars=d.map(k=>{const v=+k[5],b=+k[9];return{time:+k[0],open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:v,buyVol:b,sellVol:v-b,delta:b-(v-b),buyDol:b*+k[4],sellDol:(v-b)*+k[4],body:Math.abs(+k[4]-+k[1])};});}
+        if (r.ok){const d=await r.json();bars=d.map(_mapBinanceBar);}
       } else {
         const iv=YF_INTERVAL[tf]||'5m',range=YF_RANGE[tf]||'5d';
         const yfUrl=`https://query1.finance.yahoo.com/v8/finance/chart/${ticker.yf}?interval=${iv}&range=${range}&includePrePost=false`;
         const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(yfUrl),{headers:{'Accept':'application/json'}});
-        if (r.ok){const d=await r.json();const res=d?.chart?.result?.[0];if(res){const ts2=res.timestamp||[],q=res.indicators?.quote?.[0]||{};bars=ts2.map((t,i)=>{const o=q.open?.[i]||0,h=q.high?.[i]||0,l=q.low?.[i]||0,c=q.close?.[i]||0,vol=q.volume?.[i]||0;if(!c)return null;const rng=Math.max(h-l,c*0.00001),bv=vol*(c-l)/rng,sv=vol*(h-c)/rng;return{time:t*1000,open:o,high:h,low:l,close:c,volume:vol,buyVol:bv,sellVol:sv,delta:bv-sv,buyDol:bv*c,sellDol:sv*c,body:Math.abs(c-o)};}).filter(Boolean);}}
+        if (r.ok){const d=await r.json();const res=d?.chart?.result?.[0];if(res){const ts2=res.timestamp||[],q=res.indicators?.quote?.[0]||{};bars=ts2.map((t,i)=>_mapYahooBar(t,q,i)).filter(Boolean);}}
       }
       if (!bars||bars.length<15) return;
       const ind=computeIndicatorsForBars(bars,S.settings); if(!ind) return;
@@ -2935,7 +3024,7 @@ async function _doMTFFetch(){
       const cls=ind.longEntry?'bull':ind.shortEntry?'bear':ind.bullTrend?'bull':'bear';
       cell.textContent=sig; cell.className=`mtf-sig ${cls}`;
       const p=cell.parentElement; p.classList.remove('bull-bg','bear-bg'); p.classList.add(cls+'-bg');
-    } catch(_){}
+    } catch(e) { logAlert('info', 'MTF cell error: ' + e.message); }
   }));
   if(el) el.textContent=ts();
 }
@@ -2957,12 +3046,12 @@ async function scanFull(){
       if (ticker.type==='crypto'&&ticker.binance){
         const iv={'1m':'1m','5m':'5m','15m':'15m','1h':'1h','4h':'4h','1d':'1d'}[S.currentTF]||'5m';
         const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=${ticker.binance}&interval=${iv}&limit=60`);
-        if(r.ok){const d=await r.json();bars=d.map(k=>{const v=+k[5],b=+k[9];return{time:+k[0],open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:v,buyVol:b,sellVol:v-b,delta:b-(v-b),buyDol:b*+k[4],sellDol:(v-b)*+k[4],body:Math.abs(+k[4]-+k[1])};});}
+        if(r.ok){const d=await r.json();bars=d.map(_mapBinanceBar);}
       } else {
         const iv=YF_INTERVAL[S.currentTF]||'5m',range=YF_RANGE[S.currentTF]||'5d';
         const yfUrl=`https://query1.finance.yahoo.com/v8/finance/chart/${ticker.yf}?interval=${iv}&range=${range}&includePrePost=false`;
         const r=await fetch('https://corsproxy.io/?'+encodeURIComponent(yfUrl),{headers:{'Accept':'application/json'}});
-        if(r.ok){const d=await r.json();const res=d?.chart?.result?.[0];if(res){const ts2=res.timestamp||[],q=res.indicators?.quote?.[0]||{};bars=ts2.map((t,i)=>{const o=q.open?.[i]||0,h=q.high?.[i]||0,l=q.low?.[i]||0,c=q.close?.[i]||0,vol=q.volume?.[i]||0;if(!c)return null;const rng=Math.max(h-l,c*0.00001),bv=vol*(c-l)/rng,sv=vol*(h-c)/rng;return{time:t*1000,open:o,high:h,low:l,close:c,volume:vol,buyVol:bv,sellVol:sv,delta:bv-sv,buyDol:bv*c,sellDol:sv*c,body:Math.abs(c-o)};}).filter(Boolean);}}
+        if(r.ok){const d=await r.json();const res=d?.chart?.result?.[0];if(res){const ts2=res.timestamp||[],q=res.indicators?.quote?.[0]||{};bars=ts2.map((t,i)=>_mapYahooBar(t,q,i)).filter(Boolean);}}
       }
       const ind=bars&&bars.length>=15?computeIndicatorsForBars(bars,S.settings):null;
       S.scanResults[sym]=ind?{signal:ind.longEntry?'long':ind.shortEntry?'short':'wait',score:ind.condScore,htfSpike:ind.htfSpike,price:bars[bars.length-1].close,live:true}:{signal:'wait',score:null,price:0,live:false,chg24h:S.tickerPrices[sym]?.chg??null};
@@ -3111,14 +3200,7 @@ function initPanZoom() {
   wrapper.addEventListener('dblclick', () => { resetChartState(); scheduleRedraw(); });
 }
 
-// Returns the visible bar slice (used by hover tooltip + scanner etc.)
-function getVisibleBars() {
-  const bars = S.bars;
-  if (!bars.length) return [];
-  const cv = document.getElementById('priceCanvas');
-  const vp = getViewport(cv, CHART_PAD);
-  return bars.slice(vp.iStart, vp.iEnd + 1);
-}
+
 
 function resetChartState() {
   S.viewEnd  = null;   // auto: newest bar flush-right
@@ -3178,34 +3260,11 @@ function removeFromWatchlist(sym, event) {
   if (idx >= 0) {
     S.watchlist.splice(idx, 1);
     localStorage.setItem('of_watchlist', JSON.stringify(S.watchlist));
-    if (S.currentTab === 'watchlist') renderWatchlist();
+    if (S.currentTab === 'portfolio') renderPortfolio();
     logAlert('info', 'Removed ' + sym);
   }
 }
 
-function renderWatchlist() {
-  if (S.currentTab !== 'watchlist') return;
-  if (!S.watchlist.length) {
-    document.getElementById('rpContent').innerHTML = '<div class="watchlist-empty">📋 NO WATCHLIST<br><br><span style="font-size:9px;color:var(--tx3)">Click WATCH button</span></div>';
-    return;
-  }
-  
-  let html = '<div style="padding:10px 14px">';
-  S.watchlist.forEach(sym => {
-    const ticker = FLAT_TICKERS.find(t => t.sym === sym);
-    if (!ticker) return;
-    html += `<div class="wl-item" onclick="selectTicker('${sym}')" style="margin-bottom:6px;padding:10px;background:var(--card);border:1px solid var(--bd);border-radius:7px">
-      <div style="display:flex;justify-content:space-between">
-        <div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--tx1)">${sym}</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2)">${ticker.name}</div>
-        </div>
-        <span onclick="removeFromWatchlist('${sym}', event)" style="color:var(--tx3);cursor:pointer;padding:6px">✕</span>
-      </div>
-    </div>`;
-  });
-  document.getElementById('rpContent').innerHTML = html + '</div>';
-}
 
 function renderPortfolio() {
   if (S.currentTab !== 'portfolio') return;
@@ -3285,45 +3344,7 @@ function toggleScanner() {
   if (S.currentTab === 'portfolio') renderPortfolio();
 }
 
-function scanFavorites() {
-  S.lastScanTime = ts();
-  if (!S.favorites.length) return;
-  
-  S.favorites.forEach((sym, index) => {
-    setTimeout(() => {
-      const ticker = FLAT_TICKERS.find(t => t.sym === sym);
-      if (!ticker) return;
-      
-      if (sym === S.currentTicker.sym && S.lastInd) {
-        S.scanResults[sym] = {
-          signal: S.lastInd.longEntry ? 'long' : S.lastInd.shortEntry ? 'short' : 'wait',
-          score: S.lastInd.condScore || 0,
-          htfSpike: S.lastInd.htfSpike,
-          price: S.bars[S.bars.length-1]?.close || 0,
-          live: true
-        };
-      } else {
-        // Use 24h change from price cache as a directional indicator
-        // Real order-flow signal requires loading the full ticker — click to load
-        const cached = S.tickerPrices[sym];
-        const chg = cached ? cached.chg : null;
-        const trend = chg === null ? 'wait' : chg > 1 ? 'long' : chg < -1 ? 'short' : 'wait';
-        S.scanResults[sym] = {
-          signal: trend,
-          score: null,        // null = no order-flow data, just 24h direction
-          htfSpike: false,
-          price: 0,
-          live: false,
-          chg24h: chg
-        };
-      }
-    }, index * 500);
-  });
-  
-  setTimeout(() => {
-    if (S.currentTab === 'portfolio') renderPortfolio();
-  }, S.favorites.length * 500 + 1000);
-}
+
 
 // ══════════════════════════════════════════════════════════════
 // THEME SYSTEM
@@ -3467,7 +3488,7 @@ class StrategyEngine {
       try {
         const sig = s.evaluate(bars, ind);
         if (sig) results.push({ ...sig, name: s.name });
-      } catch(_) {}
+      } catch(e) { logAlert('info', 'Strategy eval error (' + s.name + '): ' + e.message); }
     }
     return results.sort((a,b) => b.confidence - a.confidence);
   }
@@ -3552,7 +3573,7 @@ function toggleStrategy(idx) {
   const s = strategyEngine.strategies[idx];
   if (!s) return;
   s.enabled = !s.enabled;
-  renderSettings(); // re-render
+  renderSettingsWithStrategies(); // re-render with strategy section
   if (S.lastInd && S.bars.length) {
     S._stratSignals = strategyEngine.evaluate(S.bars, S.lastInd);
   }
