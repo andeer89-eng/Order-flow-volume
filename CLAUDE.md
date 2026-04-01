@@ -97,7 +97,26 @@ CODEBASE_ANALYSIS.md          # Detailed codebase analysis with findings
 REPOSITORY_PATTERN_ANALYSIS.md # Cross-repo pattern analysis and recommendations
 CLAUDE.md                     # This file — project context for Claude Code
 .gitignore                    # Git ignore rules
+.claude/
+  settings.json               # Claude Code hooks and quality gates
+  rules/
+    security.md               # Security rules (XSS, secrets, validation)
+    coding-style.md            # Coding style rules (file size, functions, naming)
+tests/
+  indicators.test.js           # Indicator & utility test suite (93 tests)
 ```
+
+## Testing
+
+Run the indicator test suite:
+
+```bash
+node tests/indicators.test.js
+```
+
+Tests cover: `esc()`, `sma()`, `ema()`, `calcRSI()`, `_mapBinanceBar()`,
+`_mapYahooBar()`, `aggregate4hBars()`. Verify all tests pass before merging
+changes to indicator logic.
 
 ## Git Workflow
 

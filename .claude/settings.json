@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "description": "Block --no-verify on git commits",
+        "command": "if echo \"$TOOL_INPUT\" | grep -q '\\-\\-no-verify'; then echo 'BLOCKED: Do not skip git hooks (--no-verify). Fix the underlying issue instead.' >&2; exit 1; fi; exit 0"
+      },
+      {
+        "matcher": "Bash",
+        "description": "Block force push to main",
+        "command": "if echo \"$TOOL_INPUT\" | grep -qE 'push.*--force.*main|push.*-f.*main'; then echo 'BLOCKED: Never force push to main.' >&2; exit 1; fi; exit 0"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "description": "Warn when index.html exceeds 4500 lines",
+        "command": "if [ -f index.html ]; then LINES=$(wc -l < index.html); if [ \"$LINES\" -gt 4500 ]; then echo \"WARNING: index.html is $LINES lines. Consider extracting into modules.\" >&2; fi; fi; exit 0"
+      }
+    ]
+  }
+}
