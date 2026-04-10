@@ -8,8 +8,9 @@ A professional trading dashboard + TradingView Pine Script indicator for real-ti
 
 | File | Size | Purpose |
 |------|------|---------|
-| `index.html` | ~3,950 lines | Self-contained web dashboard — vanilla JS/CSS/HTML, no build step |
-| `order_flow_elite.pine` | ~285 lines | Pine Script v6 indicator for TradingView |
+| `index.html` | ~4,250 lines | Self-contained web dashboard — vanilla JS/CSS/HTML, no build step |
+| `order_flow_elite.pine` | ~285 lines | Pine Script v6 volume-pane indicator for TradingView (`overlay=false`) |
+| `order_flow_overlay.pine` | ~300 lines | Pine Script v6 price-chart overlay for TradingView (`overlay=true`) — PDH/PDL, ORB, SSL Hybrid, EMA Cloud, Session markers, Traffic Light |
 
 **Stack**: Vanilla HTML/CSS/JS (no build system), Binance WebSocket + REST,
 Yahoo Finance REST (via CORS proxies), Canvas 2D API, localStorage.
@@ -84,7 +85,8 @@ All mutable state lives in the `S` object. Key properties:
 | `recalcCumVolume()` | Incremental cumulative buy/sell volume |
 | `esc(s)` | HTML entity escaping for XSS prevention |
 | `logAlert(level, msg)` | Alert/notification system |
-| `downloadIndicator()` | Client-side Pine Script file download |
+| `downloadIndicator()` | Client-side Pine Script file download (volume-pane indicator) |
+| `downloadOverlayIndicator()` | Client-side download for overlay Pine Script (PDH/PDL, ORB, SSL, etc.) |
 
 ### Keyboard Shortcuts
 | Key | Action |
@@ -142,6 +144,7 @@ All entry/exit signals must use `barstate.isconfirmed`. Never use `barstate.isla
 - Entry signals require: `trend + htfSpike + RSI filter + divergence + !exhaust`
 - Any change to signal logic must be reflected in both JS and Pine Script
 - When Pine Script changes: update `order_flow_elite.pine` AND the string in `downloadIndicator()`
+- When overlay Pine Script changes: update `order_flow_overlay.pine` AND the string in `downloadOverlayIndicator()`
 
 ### WebSocket Data
 
@@ -225,6 +228,10 @@ Manual dashboard testing:
 **Add a new ticker:** Add an entry to the `TICKERS` object (line ~979) with `{ sym, name, type, yf, binance? }`.
 
 **Change indicator logic:** Edit `order_flow_elite.pine` first, verify in TradingView, then sync the string in `downloadIndicator()`. Run `node tests/indicators.test.js` to confirm JS parity.
+
+**Change overlay indicator:** Edit `order_flow_overlay.pine` first, verify in TradingView, then sync the string in `downloadOverlayIndicator()` in `index.html`.
+
+**Overlay canvas features (PDH/PDL, ORB, EMA 8):** These are computed in `runIndicators()` and stored in `S._pdh`, `S._pdl`, `S._orbH`, `S._orbL`, `S._e8`. They are drawn in `drawOverlays()` after the VWAP section.
 
 **Add a dashboard metric:** Add a row to the `METRICS` section in the left panel HTML and wire it to the `S` state object via the `updateDashboard()` function.
 
