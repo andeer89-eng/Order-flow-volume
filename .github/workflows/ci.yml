@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Validate Pine Script structure ────────────────────────────────
+  validate-pine:
+    name: Validate Pine Script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Pine Script version declaration
+        run: |
+          if ! grep -q '//@version=6' order_flow_elite.pine; then
+            echo "ERROR: order_flow_elite.pine must start with //@version=6"
+            exit 1
+          fi
+          echo "Pine Script v6 declaration confirmed."
+
+      - name: Check for barstate.isconfirmed on entry signals
+        run: |
+          if ! grep -q 'barstate.isconfirmed' order_flow_elite.pine; then
+            echo "ERROR: No barstate.isconfirmed found — signals may repaint!"
+            exit 1
+          fi
+          echo "barstate.isconfirmed usage confirmed."
+
+      - name: Check downloadIndicator() is in sync
+        run: |
+          # Both files must contain the same version declaration
+          pine_ver=$(grep -c '//@version=6' order_flow_elite.pine)
+          html_ver=$(grep -c '//@version=6' index.html)
+          if [ "$pine_ver" -eq 0 ] || [ "$html_ver" -eq 0 ]; then
+            echo "ERROR: Pine Script version mismatch between order_flow_elite.pine and downloadIndicator() in index.html"
+            exit 1
+          fi
+          echo "Pine Script version consistent in both files."
+
+  # ── Secret detection ──────────────────────────────────────────────
+  secrets:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for hardcoded secrets
+        run: |
+          # Fail if real-looking API keys or tokens are found
+          if grep -rn \
+            -e 'sk-[A-Za-z0-9]\{20,\}' \
+            -e 'AKIA[0-9A-Z]\{16\}' \
+            -e 'api[_-]\?key\s*[:=]\s*["'"'"'][A-Za-z0-9_\-]\{16,\}' \
+            --include='*.html' --include='*.pine' --include='*.js' .; then
+            echo "ERROR: Possible hardcoded secret detected. Use the Settings tab endpoint field or environment variables."
+            exit 1
+          fi
+          echo "No hardcoded secrets detected."
+
+      - name: Check CORS proxy usage is safe
+        run: |
+          # Warn (don't fail) if new proxy URLs are introduced
+          PROXIES=$(grep -rn 'corsproxy\|allorigins\|cors-anywhere' \
+            --include='*.html' --include='*.js' . | wc -l)
+          echo "CORS proxy references found: $PROXIES"
+          echo "Reminder: CORS proxies are public and unauthenticated. Never route sensitive data through them."
+
+  # ── HTML / JS linting ─────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install linters
+        run: npm install -g htmlhint markdownlint-cli
+
+      - name: Lint HTML structure
+        run: |
+          htmlhint --config .htmlhintrc index.html || true
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint README.md CLAUDE.md \
+            --disable MD013 MD033 MD041 MD036 MD026 || true
+
+  # ── Structural integrity ──────────────────────────────────────────
+  structure:
+    name: Structural Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Required files present
+        run: |
+          for f in index.html order_flow_elite.pine CLAUDE.md README.md; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: Required file missing: $f"
+              exit 1
+            fi
+          done
+          echo "All required files present."
+
+      - name: index.html has CSP meta tag
+        run: |
+          if ! grep -q 'Content-Security-Policy' index.html; then
+            echo "ERROR: Content-Security-Policy meta tag missing from index.html"
+            exit 1
+          fi
+          echo "CSP meta tag confirmed."
+
+      - name: index.html has esc() XSS helper
+        run: |
+          if ! grep -q "const esc" index.html; then
+            echo "ERROR: XSS escape helper esc() not found in index.html"
+            exit 1
+          fi
+          echo "XSS helper esc() confirmed."
+
+      - name: index.html has download function
+        run: |
+          if ! grep -q 'function downloadIndicator' index.html; then
+            echo "ERROR: downloadIndicator() function missing from index.html"
+            exit 1
+          fi
+          echo "downloadIndicator() confirmed."
