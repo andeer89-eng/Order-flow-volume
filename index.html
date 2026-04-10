@@ -495,6 +495,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <button class="hdr-btn" style="background:rgba(74,124,220,.12);border-color:rgba(74,124,220,.35);color:var(--blue)" onclick="addToWatchlist()">📋 WATCH</button>
     <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onclick="openManualTrade()">+ TRADE</button>
     <button class="hdr-btn" style="background:rgba(0,196,160,.12);border-color:rgba(0,196,160,.4);color:var(--teal)" onclick="downloadIndicator()">⬇ PINE SCRIPT</button>
+    <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onclick="downloadOverlayIndicator()">⬇ OVERLAY</button>
     <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">☀ DAY</button>
   </div>
 </div>
@@ -593,6 +594,27 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="htf-row" style="margin-top:7px">
         <div><div class="htf-lbl">MARKET STATE</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">ABSORB / ACCUM / DISTR</div></div>
         <div class="htf-val off" id="mktStateVal">—</div>
+      </div>
+      <!-- Stacked EMA row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">EMA STACK</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">8 › 13 › 21 › 34 › 55</div></div>
+        <div class="htf-val off" id="emaStackVal">—</div>
+      </div>
+      <!-- PDH/PDL row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">PDH / PDL</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">Prev Day High / Low</div></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+          <div class="htf-val bull" id="pdhVal" style="font-size:10px">—</div>
+          <div class="htf-val bear" id="pdlVal" style="font-size:10px">—</div>
+        </div>
+      </div>
+      <!-- ORB row -->
+      <div class="htf-row" style="margin-top:7px">
+        <div><div class="htf-lbl">ORB (15m)</div><div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:1px;letter-spacing:.07em">Opening Range Breakout</div></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+          <div class="htf-val teal" id="orbHVal" style="font-size:10px">—</div>
+          <div class="htf-val bear" id="orbLVal" style="font-size:10px">—</div>
+        </div>
       </div>
     </div>
     <div class="lp-sec">
@@ -1041,6 +1063,8 @@ const S = {
   pnl:{ open:null, closed:[], equity:[0] },
   lastInd:null,
   _e50:[], _e200:[], _volMA:[], _vwap:[], _cvdArr:[],
+  _e8:[], _e13:[], _e21:[], _e34:[], _e55:[],
+  _pdh:null, _pdl:null, _orbH:null, _orbL:null,
   currentTicker: FLAT_TICKERS[0],
   tickerPrices:{}, // cache for dropdown prices
   panOffset: 0, zoomLevel: 1.0, isDragging: false, dragStartX: 0, dragStartOffset: 0,
@@ -1839,7 +1863,38 @@ function runIndicators() {
   cur.longEntry=longEntry; cur.shortEntry=shortEntry;
   cur.longExit=longExit&&!longEntry; cur.shortExit=shortExit&&!shortEntry;
   S._e50=e50; S._e200=e200; S._volMA=volMA;
-  const ind = { e50,e200,bullTrend,bearTrend,trendState,vwap,sessionCVD,imbalance,marketState,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore,rsi:rsiVal };
+
+  // ── Stacked EMA (8/13/21/34/55) ──────────────────────────────
+  const e8  = ema(closes, 8);
+  const e13 = ema(closes, 13);
+  const e21 = ema(closes, 21);
+  const e34 = ema(closes, 34);
+  const e55 = ema(closes, 55);
+  S._e8=e8; S._e13=e13; S._e21=e21; S._e34=e34; S._e55=e55;
+  const s8=e8[n-1],s13=e13[n-1],s21=e21[n-1],s34=e34[n-1],s55=e55[n-1];
+  const stackBull = s8>s13 && s13>s21 && s21>s34 && s34>s55;
+  const stackBear = s8<s13 && s13<s21 && s21<s34 && s34<s55;
+  const emaStack  = stackBull?'BULL':stackBear?'BEAR':'MIXED';
+
+  // ── PDH / PDL: previous calendar day high/low ─────────────────
+  const todayDay = Math.floor(bars[n-1].time/86400000);
+  let pdh=null, pdl=null, prevDay=-1;
+  for(let i=n-2; i>=0; i--){ const d=Math.floor(bars[i].time/86400000); if(d<todayDay){prevDay=d;break;} }
+  if(prevDay>=0){ for(const b of bars){ const d=Math.floor(b.time/86400000); if(d===prevDay){ pdh=pdh===null?b.high:Math.max(pdh,b.high); pdl=pdl===null?b.low:Math.min(pdl,b.low); } } }
+  S._pdh=pdh; S._pdl=pdl;
+
+  // ── ORB: high/low of first 15 minutes of today ────────────────
+  const tfMinutes = {'1m':1,'5m':5,'15m':15,'1h':60,'4h':240,'1d':1440}[S.currentTF]||1;
+  const orbBarCount = Math.max(1, Math.ceil(15/tfMinutes));
+  const todayBars = bars.filter(b=>Math.floor(b.time/86400000)===todayDay);
+  let orbH=null, orbL=null;
+  if(todayBars.length>=orbBarCount){
+    const sl=todayBars.slice(0,orbBarCount);
+    orbH=Math.max(...sl.map(b=>b.high)); orbL=Math.min(...sl.map(b=>b.low));
+  }
+  S._orbH=orbH; S._orbL=orbL;
+
+  const ind = { e50,e200,bullTrend,bearTrend,trendState,vwap,sessionCVD,imbalance,marketState,volMAn,volRatio,htfSpike,bullDiv,bearDiv,absorption,hiddenAccum,hiddenDistrib,bullExhaust,bearExhaust,dominance,longEntry,shortEntry,longExit,shortExit,condScore,rsi:rsiVal,emaStack,pdh,pdl,orbH,orbL };
   S.lastInd = ind;
   updateLeftPanel(ind, cur);
   updatePnL(ind, cur);
@@ -1970,6 +2025,16 @@ function updateLeftPanel(ind, cur) {
   if(vwapEl && ind.vwap){ vwapEl.textContent=fmtPx(ind.vwap,S.currentTicker); vwapEl.className='htf-val '+(cur2.close>ind.vwap?'bull':'bear'); }
   const mktEl=document.getElementById('mktStateVal');
   if(mktEl){ const mc={ABSORB:'amber',ACCUM:'bull',DISTR:'bear','—':'off'}; mktEl.textContent=ind.marketState; mktEl.className='htf-val '+(mc[ind.marketState]||'off'); }
+  const stackEl=document.getElementById('emaStackVal');
+  if(stackEl){ stackEl.textContent=ind.emaStack; stackEl.className='htf-val '+(ind.emaStack==='BULL'?'bull':ind.emaStack==='BEAR'?'bear':'amber'); }
+  const pdhEl=document.getElementById('pdhVal');
+  if(pdhEl && ind.pdh!=null){ pdhEl.textContent=fmtPx(ind.pdh,S.currentTicker); }
+  const pdlEl=document.getElementById('pdlVal');
+  if(pdlEl && ind.pdl!=null){ pdlEl.textContent=fmtPx(ind.pdl,S.currentTicker); }
+  const orbHEl=document.getElementById('orbHVal');
+  if(orbHEl && ind.orbH!=null){ orbHEl.textContent=fmtPx(ind.orbH,S.currentTicker); }
+  const orbLEl=document.getElementById('orbLVal');
+  if(orbLEl && ind.orbL!=null){ orbLEl.textContent=fmtPx(ind.orbL,S.currentTicker); }
 }
 function setFlag2(rid,vid,val,isWarn){const el=document.getElementById(rid);el.className='flag-c'+(val?(isWarn?' warn':' on'):'');document.getElementById(vid).textContent=val?'TRUE':'FALSE';}
 
@@ -2345,6 +2410,51 @@ function drawOverlays(ctx, vp, toY, subtle) {
       const ly = Math.max(P.t+8, Math.min(P.t+cH-4, toY(lv)));
       ctx.fillStyle = `rgba(0,196,160,${subtle?.6:.75})`; ctx.font = "7px 'JetBrains Mono'"; ctx.textAlign = 'left';
       ctx.fillText('VWAP '+fmtPx(lv,S.currentTicker), W-P.r+5, ly+3);
+    }
+  }
+  // ── EMA 8 (thin purple) ──────────────────────────────────────
+  if (!subtle && S._e8 && S._e8.length) {
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(155,89,182,.65)'; ctx.lineWidth = 1; let fe=true;
+    for(let i=vp.iStart;i<=vp.iEnd;i++){ const v=S._e8[i]; if(v==null)continue; const x=vp.xOf(i),y=toY(v); fe?ctx.moveTo(x,y):ctx.lineTo(x,y); fe=false; }
+    ctx.stroke();
+  }
+  // ── PDH / PDL dashed lines ────────────────────────────────────
+  const {W,P,cH} = vp;
+  if (S._pdh != null) {
+    const y = toY(S._pdh);
+    if (y >= P.t && y <= P.t+cH) {
+      ctx.strokeStyle = 'rgba(240,73,104,.55)'; ctx.lineWidth = 1; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W-P.r, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(240,73,104,.7)'; ctx.font = "7px 'JetBrains Mono'"; ctx.textAlign = 'left';
+      ctx.fillText('PDH '+fmtPx(S._pdh,S.currentTicker), W-P.r+5, y-2);
+    }
+  }
+  if (S._pdl != null) {
+    const y = toY(S._pdl);
+    if (y >= P.t && y <= P.t+cH) {
+      ctx.strokeStyle = 'rgba(0,196,160,.55)'; ctx.lineWidth = 1; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W-P.r, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0,196,160,.7)'; ctx.font = "7px 'JetBrains Mono'"; ctx.textAlign = 'left';
+      ctx.fillText('PDL '+fmtPx(S._pdl,S.currentTicker), W-P.r+5, y+8);
+    }
+  }
+  // ── ORB high / low solid lines ────────────────────────────────
+  if (S._orbH != null) {
+    const y = toY(S._orbH);
+    if (y >= P.t && y <= P.t+cH) {
+      ctx.strokeStyle = 'rgba(0,196,160,.75)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W-P.r, y); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,196,160,.8)'; ctx.font = "7px 'JetBrains Mono'"; ctx.textAlign = 'left';
+      ctx.fillText('ORB H '+fmtPx(S._orbH,S.currentTicker), P.l+4, y-2);
+    }
+  }
+  if (S._orbL != null) {
+    const y = toY(S._orbL);
+    if (y >= P.t && y <= P.t+cH) {
+      ctx.strokeStyle = 'rgba(240,73,104,.75)'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(P.l, y); ctx.lineTo(W-P.r, y); ctx.stroke();
+      ctx.fillStyle = 'rgba(240,73,104,.8)'; ctx.font = "7px 'JetBrains Mono'"; ctx.textAlign = 'left';
+      ctx.fillText('ORB L '+fmtPx(S._orbL,S.currentTicker), P.l+4, y+8);
     }
   }
 }
@@ -3956,6 +4066,305 @@ if barstate.islast
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// ── OVERLAY PINE SCRIPT DOWNLOAD ─────────────────────────────────────────────
+function downloadOverlayIndicator() {
+  const pine = `// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0
+// © Order Flow Volume Suite ELITE — Overlay Companion v1.0
+// Pine Script v6 | overlay=true
+// Ports key features from ThinkScript multi-indicator suite:
+//   PDH/PDL lines, Multi-TF ATR label, ORB (15-min opening range),
+//   PSAR Transition line, SSL Hybrid (HMA baseline + Keltner channel),
+//   EMA Cloud (8/20), Stacked EMAs label, Session markers, Traffic Light consensus
+
+//@version=6
+indicator("Order Flow Overlay Suite [v6]", overlay=true, max_bars_back=500,
+     max_lines_count=50, max_labels_count=50)
+
+// ─── Input Groups ───────────────────────────────────────────────────────────
+grpPDH   = "Previous Day High / Low"
+grpORB   = "Opening Range Breakout (ORB)"
+grpSSL   = "SSL Hybrid Baseline"
+grpEMA   = "EMA Cloud & Stacked EMAs"
+grpPSAR  = "Parabolic SAR Transition"
+grpSess  = "Session Markers"
+grpATR   = "Multi-TF ATR Label"
+grpTL    = "Traffic Light Consensus"
+
+// PDH/PDL
+showPDH     = input.bool(true,  "Show PDH / PDL",        group=grpPDH)
+pdhCol      = input.color(color.new(#FF6B6B, 0), "PDH colour", group=grpPDH)
+pdlCol      = input.color(color.new(#4ECDC4, 0), "PDL colour", group=grpPDH)
+
+// ORB
+showORB     = input.bool(true,  "Show ORB (15-min)",     group=grpORB)
+orbLen      = input.int(15,  "ORB Minutes",  minval=1, maxval=120, group=grpORB)
+orbHCol     = input.color(color.new(#00C4A0, 70), "ORB High fill", group=grpORB)
+orbLCol     = input.color(color.new(#FF6B6B, 70), "ORB Low fill",  group=grpORB)
+
+// SSL Hybrid
+showSSL     = input.bool(true,  "Show SSL Hybrid",       group=grpSSL)
+sslLen      = input.int(14,  "SSL HMA Length",  minval=2, group=grpSSL)
+keltLen     = input.int(20,  "Keltner Length",  minval=2, group=grpSSL)
+keltMult    = input.float(1.5, "Keltner Mult",  minval=0.1, step=0.1, group=grpSSL)
+
+// EMA Cloud
+showEMAcld  = input.bool(true,  "Show EMA Cloud (8/20)", group=grpEMA)
+ema8col     = input.color(color.new(#00C4A0, 0), "EMA 8 colour",  group=grpEMA)
+ema20col    = input.color(color.new(#FF6B6B, 0), "EMA 20 colour", group=grpEMA)
+showEMAstack= input.bool(true,  "Show Stacked EMAs label",group=grpEMA)
+
+// PSAR Transition
+showPSAR    = input.bool(true,  "Show PSAR Transition line", group=grpPSAR)
+psarStart   = input.float(0.02, "PSAR Start",  minval=0.001, step=0.001, group=grpPSAR)
+psarInc     = input.float(0.02, "PSAR Inc",    minval=0.001, step=0.001, group=grpPSAR)
+psarMax     = input.float(0.2,  "PSAR Max",    minval=0.01,  step=0.01,  group=grpPSAR)
+psarCol     = input.color(color.new(#FFD700, 0), "PSAR line colour", group=grpPSAR)
+
+// Session Markers
+showSess    = input.bool(true,  "Show Session Markers",  group=grpSess)
+sessOpen    = input.session("0930-0931", "Market Open (9:30)",   group=grpSess)
+sessTTT     = input.session("1000-1001", "Time to Trade (10:00)",group=grpSess)
+sessUK      = input.session("1120-1121", "UK Close (11:20)",     group=grpSess)
+sessPH      = input.session("1500-1501", "Power Hour (15:00)",   group=grpSess)
+
+// Multi-TF ATR
+showATR     = input.bool(true,  "Show Multi-TF ATR label", group=grpATR)
+atrLen      = input.int(14, "ATR Length", minval=1, group=grpATR)
+
+// Traffic Light
+showTL      = input.bool(true,  "Show Traffic Light label", group=grpTL)
+
+// ─── Utility ─────────────────────────────────────────────────────────────────
+isRegularSession = not na(time("1", "0930-1600"))
+
+// ─── Previous Day High / Low ─────────────────────────────────────────────────
+[dHigh, dLow] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+var line pdhLine = na
+var line pdlLine = na
+var label pdhLbl = na
+var label pdlLbl = na
+
+if showPDH and barstate.islast
+    if not na(pdhLine)
+        line.delete(pdhLine)
+        line.delete(pdlLine)
+        label.delete(pdhLbl)
+        label.delete(pdlLbl)
+    pdhLine := line.new(bar_index - 200, dHigh, bar_index + 20, dHigh,
+         color=pdhCol, width=1, style=line.style_dashed, extend=extend.none)
+    pdlLine := line.new(bar_index - 200, dLow,  bar_index + 20, dLow,
+         color=pdlCol, width=1, style=line.style_dashed, extend=extend.none)
+    pdhLbl  := label.new(bar_index + 2, dHigh, "PDH " + str.tostring(dHigh, format.mintick),
+         color=color.new(pdhCol, 80), textcolor=pdhCol, style=label.style_label_left, size=size.small)
+    pdlLbl  := label.new(bar_index + 2, dLow,  "PDL " + str.tostring(dLow, format.mintick),
+         color=color.new(pdlCol, 80), textcolor=pdlCol, style=label.style_label_left, size=size.small)
+
+// ─── Opening Range Breakout ───────────────────────────────────────────────────
+// ORB = high/low of first orbLen minutes after 09:30
+var float orbHigh = na
+var float orbLow  = na
+var bool  orbSet  = false
+var int   orbDay  = na
+
+isNewDay   = ta.change(time("D")) != 0
+isORBtime  = not na(time(str.tostring(timeframe.multiplier) + "", "0930-" + str.tostring(930 + orbLen)))
+
+if isNewDay
+    orbSet  := false
+    orbHigh := na
+    orbLow  := na
+    orbDay  := dayofweek
+
+if isORBtime and not orbSet
+    orbHigh := na(orbHigh) ? high : math.max(orbHigh, high)
+    orbLow  := na(orbLow)  ? low  : math.min(orbLow,  low)
+
+if not isORBtime and not na(orbHigh) and not orbSet
+    orbSet := true
+
+var line orbHLine = na
+var line orbLLine = na
+var label orbHLbl = na
+var label orbLLbl = na
+
+if showORB and orbSet and barstate.islast
+    if not na(orbHLine)
+        line.delete(orbHLine)
+        line.delete(orbLLine)
+        label.delete(orbHLbl)
+        label.delete(orbLLbl)
+    orbHLine := line.new(bar_index - 100, orbHigh, bar_index + 20, orbHigh,
+         color=color.new(#00C4A0, 0), width=2, style=line.style_solid)
+    orbLLine := line.new(bar_index - 100, orbLow,  bar_index + 20, orbLow,
+         color=color.new(#FF6B6B, 0), width=2, style=line.style_solid)
+    orbHLbl  := label.new(bar_index + 2, orbHigh, "ORB H " + str.tostring(orbHigh, format.mintick),
+         color=color.new(#00C4A0, 80), textcolor=#00C4A0, style=label.style_label_left, size=size.small)
+    orbLLbl  := label.new(bar_index + 2, orbLow,  "ORB L " + str.tostring(orbLow, format.mintick),
+         color=color.new(#FF6B6B, 80), textcolor=#FF6B6B, style=label.style_label_left, size=size.small)
+
+// ─── SSL Hybrid Baseline (HMA type + Keltner channel) ────────────────────────
+hma(src, len) =>
+    wma2 = 2.0 * ta.wma(src, math.floor(len / 2))
+    wma1 = ta.wma(src, len)
+    ta.wma(wma2 - wma1, math.floor(math.sqrt(len)))
+
+sslBase  = hma(close, sslLen)
+keltATR  = ta.atr(keltLen)
+keltUpper= sslBase + keltMult * keltATR
+keltLower= sslBase - keltMult * keltATR
+
+sslBull  = close > keltUpper
+sslBear  = close < keltLower
+sslColor = sslBull ? color.new(#00C4A0, 0) : sslBear ? color.new(#FF6B6B, 0) : color.new(#888888, 0)
+
+plot(showSSL ? sslBase   : na, "SSL Baseline", color=sslColor,    linewidth=2)
+plot(showSSL ? keltUpper : na, "Kelt Upper",   color=color.new(#00C4A0, 70), linewidth=1, style=plot.style_line)
+plot(showSSL ? keltLower : na, "Kelt Lower",   color=color.new(#FF6B6B, 70), linewidth=1, style=plot.style_line)
+
+// SSL signals on baseline crossover
+sslLong  = ta.crossover(close, keltUpper)
+sslShort = ta.crossunder(close, keltLower)
+plotshape(showSSL and sslLong  ? sslBase : na, "SSL Long",  shape.triangleup,   location.belowbar, color=color.new(#00C4A0, 20), size=size.small)
+plotshape(showSSL and sslShort ? sslBase : na, "SSL Short", shape.triangledown, location.abovebar, color=color.new(#FF6B6B, 20), size=size.small)
+
+// ─── EMA Cloud (8 / 20) ──────────────────────────────────────────────────────
+ema8  = ta.ema(close, 8)
+ema20 = ta.ema(close, 20)
+ema13 = ta.ema(close, 13)
+ema21 = ta.ema(close, 21)
+ema34 = ta.ema(close, 34)
+ema55 = ta.ema(close, 55)
+
+p8  = plot(showEMAcld ? ema8  : na, "EMA 8",  color=ema8col,  linewidth=1)
+p20 = plot(showEMAcld ? ema20 : na, "EMA 20", color=ema20col, linewidth=1)
+fill(p8, p20, color=ema8 > ema20 ? color.new(#00C4A0, 80) : color.new(#FF6B6B, 80), title="EMA Cloud")
+
+// ─── Stacked EMAs Label ───────────────────────────────────────────────────────
+stackBull = ema8 > ema13 and ema13 > ema21 and ema21 > ema34 and ema34 > ema55
+stackBear = ema8 < ema13 and ema13 < ema21 and ema21 < ema34 and ema34 < ema55
+stackTxt  = stackBull ? "EMAs STACKED BULL" : stackBear ? "EMAs STACKED BEAR" : "EMAs MIXED"
+stackCol  = stackBull ? color.new(#00C4A0, 0) : stackBear ? color.new(#FF6B6B, 0) : color.new(#888888, 0)
+
+if showEMAstack and barstate.islast
+    label.new(bar_index + 1, ema8, stackTxt,
+         color=color.new(stackCol, 80), textcolor=stackCol,
+         style=label.style_label_left, size=size.tiny)
+
+// ─── Parabolic SAR Transition ─────────────────────────────────────────────────
+psarVal  = ta.sar(psarStart, psarInc, psarMax)
+psarBull = close > psarVal
+psarFlip = ta.cross(close, psarVal)
+
+var line psarLine = na
+
+if showPSAR and psarFlip
+    if not na(psarLine)
+        line.delete(psarLine)
+    psarLine := line.new(bar_index, low * 0.999, bar_index, high * 1.001,
+         color=psarCol, width=2, style=line.style_solid)
+
+plot(showPSAR ? psarVal : na, "PSAR", color=psarBull ? color.new(#00C4A0, 30) : color.new(#FF6B6B, 30),
+     style=plot.style_cross, linewidth=1)
+
+// ─── Session Markers ──────────────────────────────────────────────────────────
+isOpen = not na(time("1", "0930-0931")) and isRegularSession
+isTTT  = not na(time("1", "1000-1001")) and isRegularSession
+isUK   = not na(time("1", "1120-1121")) and isRegularSession
+isPH   = not na(time("1", "1500-1501")) and isRegularSession
+
+bgcolor(showSess and isOpen ? color.new(#00C4A0, 85) : na, title="Market Open 9:30")
+bgcolor(showSess and isTTT  ? color.new(#FFD700, 85) : na, title="Time-to-Trade 10:00")
+bgcolor(showSess and isUK   ? color.new(#FF6B6B, 85) : na, title="UK Close 11:20")
+bgcolor(showSess and isPH   ? color.new(#9B59B6, 85) : na, title="Power Hour 15:00")
+
+if showSess and isOpen and barstate.isconfirmed
+    label.new(bar_index, high, "OPEN 9:30", color=color.new(#00C4A0, 70), textcolor=#00C4A0,
+         style=label.style_label_down, size=size.tiny)
+if showSess and isTTT and barstate.isconfirmed
+    label.new(bar_index, high, "TTT 10:00", color=color.new(#FFD700, 70), textcolor=#FFD700,
+         style=label.style_label_down, size=size.tiny)
+if showSess and isUK and barstate.isconfirmed
+    label.new(bar_index, high, "UK 11:20", color=color.new(#FF6B6B, 70), textcolor=#FF6B6B,
+         style=label.style_label_down, size=size.tiny)
+if showSess and isPH and barstate.isconfirmed
+    label.new(bar_index, high, "PH 15:00", color=color.new(#9B59B6, 70), textcolor=#9B59B6,
+         style=label.style_label_down, size=size.tiny)
+
+// ─── Multi-TF ATR Label ───────────────────────────────────────────────────────
+[atrD, atrW, atrM] = request.security(syminfo.tickerid, "D",
+     [ta.atr(atrLen), ta.atr(atrLen)[5], ta.atr(atrLen)[20]], lookahead=barmerge.lookahead_off)
+
+atrDpct = atrD / close * 100
+atrWpct = atrW / close * 100
+atrMpct = atrM / close * 100
+
+atrTxt = "ATR  D:" + str.tostring(atrDpct, "#.##") + "%" +
+         "  W:" + str.tostring(atrWpct, "#.##") + "%" +
+         "  M:" + str.tostring(atrMpct, "#.##") + "%"
+
+if showATR and barstate.islast
+    label.new(bar_index - 5, low, atrTxt,
+         color=color.new(#1A1D27, 80), textcolor=#CCCCCC,
+         style=label.style_label_up, size=size.tiny)
+
+// ─── Traffic Light Consensus ──────────────────────────────────────────────────
+haClose = (open + high + low + close) / 4
+haOpen  = float(na)
+haOpen  := na(haOpen[1]) ? (open + close) / 2 : (haOpen[1] + haClose[1]) / 2
+haBull  = haClose > haOpen
+
+[stVal, stDir] = ta.supertrend(3.0, 10)
+stBull = stDir < 0
+
+rsiVal  = ta.rsi(close, 14)
+rsiBull = rsiVal > 50
+
+[diPlus, diMinus, _adx] = ta.dmi(14, 14)
+dmiBull = diPlus > diMinus
+
+bop     = (close - open) / (high - low + 0.0001)
+bopBull = bop > 0
+
+cciBull = ta.cci(close, 20) > 0
+
+votes = (sslBull ? 1 : -1) +
+        (stackBull ? 1 : stackBear ? -1 : 0) +
+        (psarBull ? 1 : -1) +
+        (haBull ? 1 : -1) +
+        (stBull ? 1 : -1) +
+        (rsiBull ? 1 : -1) +
+        (dmiBull ? 1 : -1) +
+        (bopBull ? 1 : -1) +
+        (cciBull ? 1 : -1)
+
+tlColor = votes >= 5 ? color.new(#00C4A0, 0) : votes <= -5 ? color.new(#FF6B6B, 0) : color.new(#FFD700, 0)
+tlLabel = votes >= 5 ? "BULL" : votes <= -5 ? "BEAR" : "NEUT"
+
+if showTL and barstate.islast
+    label.new(bar_index + 1, high, "TL " + tlLabel + "  (" + str.tostring(votes) + "/9)",
+         color=color.new(tlColor, 75), textcolor=tlColor,
+         style=label.style_label_left, size=size.small)
+
+// ─── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(sslLong  and barstate.isconfirmed, "SSL Long Signal",   "SSL Hybrid: Bullish crossover")
+alertcondition(sslShort and barstate.isconfirmed, "SSL Short Signal",  "SSL Hybrid: Bearish crossunder")
+alertcondition(psarFlip and barstate.isconfirmed, "PSAR Flip",         "PSAR: Trend transition")
+alertcondition(votes >= 5  and barstate.isconfirmed, "Traffic Light BULL", "Traffic Light: Strong bullish consensus")
+alertcondition(votes <= -5 and barstate.isconfirmed, "Traffic Light BEAR", "Traffic Light: Strong bearish consensus")
+`;
+
+  const blob2 = new Blob([pine], { type: 'text/plain' });
+  const url2  = URL.createObjectURL(blob2);
+  const a2    = document.createElement('a');
+  a2.href     = url2;
+  a2.download = 'Order_Flow_Overlay_Suite_v6.pine';
+  document.body.appendChild(a2);
+  a2.click();
+  document.body.removeChild(a2);
+  URL.revokeObjectURL(url2);
 }
 
 </script>
