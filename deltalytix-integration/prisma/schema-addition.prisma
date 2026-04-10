@@ -1,0 +1,44 @@
+// ── Append this block to your existing prisma/schema.prisma ──────────────────
+// Adds personal API key support for the Order Flow Elite integration.
+
+model PersonalApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String   @default("Order Flow Elite")
+  keyHash   String   @unique          // bcrypt hash of the raw key
+  lastUsed  DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Also add to the EliteTrade model for incoming trades from ELITE:
+model EliteTrade {
+  id         String   @id @default(cuid())
+  userId     String
+  symbol     String
+  side       String                  // "long" | "short"
+  entryPrice Float
+  exitPrice  Float
+  entryTime  DateTime
+  exitTime   DateTime
+  pnlPct     Float
+  timeframe  String
+  tags       String[]                // e.g. ["htfSpike", "bullDiv"]
+  notes      String?
+  source     String   @default("order-flow-elite")
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, source])
+}
+
+// ── Add these relations to your existing User model ───────────────────────────
+// (inside the User model block — do NOT duplicate the whole model)
+//
+//   personalApiKeys PersonalApiKey[]
+//   eliteTrades     EliteTrade[]

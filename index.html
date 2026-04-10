@@ -542,6 +542,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
           </div>
         </div>
         <div onclick="analyzeSignalWithAI()" class="ai-btn" id="aiBtn" style="display:none">🤖 AI ANALYZE</div>
+        <!-- Deltalytix performance feedback -->
+        <div id="dlxRow" style="display:none;margin-top:8px;padding:6px 8px;background:rgba(0,196,160,.06);border:1px solid rgba(0,196,160,.18);border-radius:6px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:7px;letter-spacing:.18em;color:var(--tx3);margin-bottom:3px">DELTALYTIX · 30D</div>
+          <div id="dlxStats" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--teal)">—</div>
+        </div>
       </div>
     </div>
 
@@ -1081,6 +1086,8 @@ const S = {
   wsConn: null,     // active WebSocket connection
   priceAlerts: JSON.parse(localStorage.getItem('of_price_alerts') || '[]'),
   aiEndpoint: localStorage.getItem('of_ai_endpoint') || '',
+  dlxEndpoint: localStorage.getItem('of_dlx_endpoint') || '',
+  dlxKey:      localStorage.getItem('of_dlx_key')      || '',
   btResults: null   // last backtest result
 };
 
@@ -2054,6 +2061,7 @@ function updatePnL(ind, cur) {
     if(close){ const tr={...p.open,exit:cur.close}; p.closed.unshift(tr); if(p.closed.length>50)p.closed.pop();
       p.equity.push(p.equity[p.equity.length-1]+tr.pnlPct);
       logAlert(tr.pnlPct>=0?'long':'short',`${tr.side.toUpperCase()} CLOSE → ${fmtP(tr.pnlPct)}`);
+      pushTradeToDeltalytix(tr, ind, cur);
       p.open=null;
       if(ind.longEntry)p.open={side:'long',entry:cur.close,time:ts(),bars:0};
       else if(ind.shortEntry)p.open={side:'short',entry:cur.close,time:ts(),bars:0};
@@ -2772,6 +2780,7 @@ function setStatus(msg,colorVar){const el=document.getElementById('ftStatus');el
 // SETTINGS RENDER
 // ═══════════════════════════════════════════
 function renderSettings() {
+  fetchDeltalytixStats(); // refresh Deltalytix performance stats on settings open
   const {length,spikeMult}=S.settings;
   document.getElementById('rpContent').innerHTML=`<div class="settings-form">
     <div class="sec-lbl" style="margin-bottom:2px">INDICATOR PARAMS</div>
@@ -2798,6 +2807,22 @@ function renderSettings() {
         oninput="S.aiEndpoint=this.value.trim();localStorage.setItem('of_ai_endpoint',S.aiEndpoint);document.getElementById('aiBtn').style.display=S.aiEndpoint?'block':'none'">
       <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:4px;line-height:1.6">Cloudflare Worker proxy to Claude API.<br>Leave blank to disable AI analysis button.</div>
     </div>
+    <div class="sf-divider"></div>
+    <div class="sec-lbl" style="margin-bottom:2px">DELTALYTIX INTEGRATION</div>
+    <div class="sf-group">
+      <label class="sf-label">DELTALYTIX URL</label>
+      <input type="url" id="dlxEndpointInp" value="${esc(S.dlxEndpoint)}" placeholder="https://app.deltalytix.com"
+        style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--tx1);font-family:'JetBrains Mono',monospace;font-size:9px;outline:none;margin-top:4px"
+        oninput="S.dlxEndpoint=this.value.trim();localStorage.setItem('of_dlx_endpoint',S.dlxEndpoint)">
+    </div>
+    <div class="sf-group" style="margin-top:6px">
+      <label class="sf-label">PERSONAL API KEY</label>
+      <input type="password" id="dlxKeyInp" value="${esc(S.dlxKey)}" placeholder="dlx_..."
+        style="width:100%;background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:6px 8px;color:var(--tx1);font-family:'JetBrains Mono',monospace;font-size:9px;outline:none;margin-top:4px"
+        oninput="S.dlxKey=this.value.trim();localStorage.setItem('of_dlx_key',S.dlxKey)">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx3);margin-top:4px;line-height:1.6">Syncs closed trades + tags to Deltalytix.<br>Generate key in Deltalytix → Settings → API Keys.</div>
+    </div>
+    <button class="apply-btn" style="background:rgba(0,196,160,.12);border-color:rgba(0,196,160,.3);color:var(--teal);margin-top:6px" onclick="fetchDeltalytixStats()">⟳ TEST CONNECTION</button>
     <div class="sf-divider"></div>
     <button class="apply-btn teal" onclick="applySettings()">⚡ APPLY & RECALCULATE</button>
     <button class="apply-btn blue" onclick="loadCurrentTicker()">⟳ RELOAD DATA</button>
@@ -3803,6 +3828,84 @@ window.addEventListener('load', () => {
   // Wire hover tooltip
   initHoverTooltip();
 });
+
+// ── DELTALYTIX INTEGRATION ────────────────────────────────────────────────
+async function pushTradeToDeltalytix(trade, ind, cur) {
+  const endpoint = S.dlxEndpoint;
+  const apiKey   = S.dlxKey;
+  if (!endpoint || !apiKey) return;
+  if (!endpoint.startsWith('https://')) {
+    logAlert('info', 'Deltalytix: endpoint must use HTTPS'); return;
+  }
+  const tags = [
+    ind.htfSpike      && 'htfSpike',
+    ind.bullDiv       && 'bullDiv',
+    ind.bearDiv       && 'bearDiv',
+    ind.hiddenAccum   && 'hiddenAccum',
+    ind.hiddenDistrib && 'hiddenDistrib',
+    ind.absorption    && 'absorption',
+  ].filter(Boolean);
+  const notes = [
+    `EMA Stack: ${ind.emaStack}`,
+    `CVD: ${(ind.sessionCVD >= 0 ? '+' : '') + fmt(ind.sessionCVD)}`,
+    `RSI: ${ind.rsi.toFixed(1)}`,
+    `TF: ${S.currentTF}`,
+    tags.length ? `Flags: ${tags.join(', ')}` : '',
+  ].filter(Boolean).join(' | ');
+  try {
+    const res = await fetch(endpoint.replace(/\/$/, '') + '/api/trades/import-from-elite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({
+        symbol:     S.currentTicker.sym,
+        side:       trade.side,
+        entryPrice: trade.entry,
+        exitPrice:  trade.exit,
+        entryTime:  cur.time ? new Date(cur.time).toISOString() : new Date().toISOString(),
+        exitTime:   new Date().toISOString(),
+        pnlPct:     trade.pnlPct,
+        timeframe:  S.currentTF,
+        tags,
+        notes,
+        source:     'order-flow-elite',
+      })
+    });
+    if (res.ok) {
+      logAlert('long', 'Deltalytix: trade synced');
+      fetchDeltalytixStats(); // refresh stats after new trade
+    } else {
+      logAlert('info', `Deltalytix sync failed: ${res.status}`);
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') logAlert('info', 'Deltalytix sync error: ' + e.message);
+  }
+}
+
+async function fetchDeltalytixStats() {
+  const endpoint = S.dlxEndpoint;
+  const apiKey   = S.dlxKey;
+  const row  = document.getElementById('dlxRow');
+  const stat = document.getElementById('dlxStats');
+  if (!endpoint || !apiKey) { if (row) row.style.display = 'none'; return; }
+  if (!endpoint.startsWith('https://')) return;
+  try {
+    const res = await fetch(endpoint.replace(/\/$/, '') + '/api/stats/summary?days=30&source=order-flow-elite', {
+      headers: { 'Authorization': 'Bearer ' + apiKey }
+    });
+    if (!res.ok) { if (stat) stat.textContent = `Error ${res.status}`; return; }
+    const d = await res.json();
+    const wr  = typeof d.winRate    === 'number' ? d.winRate.toFixed(0)    + '%' : '—';
+    const avg = typeof d.avgPnlPct  === 'number' ? (d.avgPnlPct >= 0 ? '+' : '') + d.avgPnlPct.toFixed(2) + '%' : '—';
+    const cnt = typeof d.tradeCount === 'number' ? d.tradeCount : '—';
+    if (stat) {
+      stat.textContent = `${wr} win  ${avg} avg  (${cnt} trades)`;
+      stat.style.color = (d.winRate ?? 0) >= 50 ? 'var(--bull)' : 'var(--bear)';
+    }
+    if (row) row.style.display = 'block';
+  } catch(e) {
+    if (e.name !== 'AbortError') logAlert('info', 'Deltalytix stats error: ' + e.message);
+  }
+}
 
 // ── PINE SCRIPT DOWNLOAD ──────────────────────────────────────────────────
 function downloadIndicator() {
