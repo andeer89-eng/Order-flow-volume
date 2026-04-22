@@ -10,6 +10,16 @@
         "matcher": "Bash",
         "description": "Block force push to main",
         "command": "if echo \"$TOOL_INPUT\" | grep -qE 'push.*--force.*main|push.*-f.*main'; then echo 'BLOCKED: Never force push to main.' >&2; exit 1; fi; exit 0"
+      },
+      {
+        "matcher": "Bash",
+        "description": "Block bash commands containing hardcoded secrets",
+        "command": "CMD=$(echo \"$TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('command',''))\" 2>/dev/null || echo ''); if echo \"$CMD\" | grep -qE '(sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})'; then echo 'BLOCKED: Possible hardcoded secret in bash command. Use environment variables or the Settings tab.' >&2; exit 1; fi; exit 0"
+      },
+      {
+        "matcher": "Write|Edit",
+        "description": "Block writing hardcoded secrets into source files",
+        "command": "CONTENT=$(echo \"$TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('content','') or d.get('new_string',''))\" 2>/dev/null || echo ''); if echo \"$CONTENT\" | grep -qE '(sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})'; then echo 'BLOCKED: Possible hardcoded secret in file content. Use environment variables or the Settings tab.' >&2; exit 1; fi; exit 0"
       }
     ],
     "PostToolUse": [
@@ -17,6 +27,23 @@
         "matcher": "Edit",
         "description": "Warn when index.html exceeds 4500 lines",
         "command": "if [ -f index.html ]; then LINES=$(wc -l < index.html); if [ \"$LINES\" -gt 4500 ]; then echo \"WARNING: index.html is $LINES lines. Consider extracting into modules.\" >&2; fi; fi; exit 0"
+      },
+      {
+        "matcher": "Edit|Write",
+        "description": "Warn when innerHTML is used without the esc() helper",
+        "command": "FILE=$(echo \"$TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('file_path',''))\" 2>/dev/null || echo ''); if echo \"$FILE\" | grep -qE '\\.(html|js)$'; then CONTENT=$(echo \"$TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get('content','') or d.get('new_string',''))\" 2>/dev/null || echo ''); if echo \"$CONTENT\" | grep -q 'innerHTML' && ! echo \"$CONTENT\" | grep -qP 'innerHTML.*esc\\('; then echo \"WARNING: innerHTML usage detected — verify esc() is used for any dynamic content in $FILE\" >&2; fi; fi; exit 0"
+      }
+    ],
+    "Stop": [
+      {
+        "description": "Persist session branch and timestamp for continuity",
+        "command": "python3 -c \"\nimport json, os, subprocess\nfrom datetime import datetime\nstate_file = os.path.join(os.environ.get('HOME', '/root'), '.claude', 'of-session-state.json')\ntry:\n    state = json.load(open(state_file)) if os.path.exists(state_file) else {}\nexcept Exception:\n    state = {}\ntry:\n    branch = subprocess.check_output(['git','branch','--show-current'], stderr=subprocess.DEVNULL).decode().strip()\nexcept Exception:\n    branch = 'unknown'\nstate.update({'lastSession': datetime.utcnow().isoformat(), 'project': 'Order-flow-volume', 'branch': branch})\njson.dump(state, open(state_file, 'w'), indent=2)\n\" 2>/dev/null; exit 0"
+      }
+    ],
+    "SessionStart": [
+      {
+        "description": "Restore session context: show last session timestamp and branch",
+        "command": "python3 -c \"\nimport json, os\nstate_file = os.path.join(os.environ.get('HOME', '/root'), '.claude', 'of-session-state.json')\nif os.path.exists(state_file):\n    try:\n        state = json.load(open(state_file))\n        if state.get('lastSession'):\n            print(f'[Order Flow] Last session: {state[\\\"lastSession\\\"]} on branch: {state.get(\\\"branch\\\", \\\"unknown\\\")}')\n    except Exception:\n        pass\n\" 2>/dev/null; exit 0"
       }
     ]
   }
