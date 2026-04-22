@@ -42,12 +42,29 @@ All mutable state lives in the `S` object. Key properties:
 | `sma(arr, n)` | Simple moving average |
 | `runIndicators()` | Main indicator pipeline (EMA, VWAP, CVD, divergence, signals) |
 | `computeIndicatorsForBars(bars)` | Indicator computation for arbitrary bar arrays (MTF/backtest) |
+| `computeFeatures(bars)` | Pure feature extraction (EMA, RSI, VWAP, SMA) |
+| `generateSignals(features, bars, config)` | Pure signal generation from features |
+| `createPositionSnapshot(sym, side, size, entry, current)` | Position with unrealized P&L |
+| `computeTradeDigest(trades)` | Aggregate stats: total P&L, win rate, Sharpe, max DD |
+| `computeGridLevels(price, step, max, frac, dir)` | Grid trading level computation |
+| `computeBidirectionalGrid(price, step, max, frac)` | Long + short grid levels |
+| `PaperTrader.execute(action, sym, price, size)` | Paper trade execution |
+| `PaperTrader.processSignal(signal, sym, price)` | Auto-execute signals in paper mode |
 | `_mapBinanceBar(k)` | Shared Binance kline → bar object mapper |
 | `_mapYahooBar(t, q, i)` | Shared Yahoo Finance → bar object mapper |
 | `aggregate4hBars(bars)` | Client-side 1h → 4h aggregation |
 | `recalcCumVolume()` | Incremental cumulative buy/sell volume |
 | `esc(s)` | HTML entity escaping for XSS prevention |
 | `logAlert(level, msg)` | Alert/notification system |
+
+### Trading Constants
+
+- `TradeType`: `LONG`, `SHORT`
+- `TradeSide`: `BUY`, `SELL`
+- `TradeAction`: `OPEN_LONG`, `CLOSE_LONG`, `OPEN_SHORT`, `CLOSE_SHORT`, `NOOP`
+- `TxStatus`: `FILLED`, `PARTIAL`, `REJECTED`, `ERROR`
+- `MarketState`: `ABSORB`, `ACCUM`, `DISTR`, `NEUTRAL`
+- `TrendState`: `BULL`, `BEAR`, `RANGE`
 
 ## Critical Rules
 
@@ -93,6 +110,7 @@ All mutable state lives in the `S` object. Key properties:
 ```
 index.html                    # Monolithic dashboard (CSS + HTML + JS, ~3950 lines)
 order_flow_elite.pine         # TradingView Pine Script v6 indicator (285 lines)
+Makefile                      # Project automation (test, lint, serve)
 CODEBASE_ANALYSIS.md          # Detailed codebase analysis with findings
 REPOSITORY_PATTERN_ANALYSIS.md # Cross-repo pattern analysis and recommendations
 CLAUDE.md                     # This file — project context for Claude Code
@@ -103,7 +121,7 @@ CLAUDE.md                     # This file — project context for Claude Code
     security.md               # Security rules (XSS, secrets, validation)
     coding-style.md            # Coding style rules (file size, functions, naming)
 tests/
-  indicators.test.js           # Indicator & utility test suite (93 tests)
+  indicators.test.js           # Indicator & utility test suite (160 tests)
 ```
 
 ## Testing
@@ -112,11 +130,15 @@ Run the indicator test suite:
 
 ```bash
 node tests/indicators.test.js
+# or
+make test
 ```
 
 Tests cover: `esc()`, `sma()`, `ema()`, `calcRSI()`, `_mapBinanceBar()`,
-`_mapYahooBar()`, `aggregate4hBars()`. Verify all tests pass before merging
-changes to indicator logic.
+`_mapYahooBar()`, `aggregate4hBars()`, `createPositionSnapshot()`,
+`computeTradeDigest()`, `computeGridLevels()`, `computeBidirectionalGrid()`,
+`computeFeatures()`, `generateSignals()`, and all trading constants.
+Verify all tests pass before merging changes to indicator logic.
 
 ## Git Workflow
 
