@@ -67,7 +67,7 @@
       },
       {
         "description": "Announce available skills and agents for this project",
-        "command": "echo '[Order Flow Skills] indicator-parity | pine-script-update | data-validation | security-check | websocket-debugging'; echo '[Order Flow Agents] trading-logic-reviewer | silent-failure-hunter | planner | code-reviewer | refactor-cleaner'; exit 0"
+        "command": "echo '[Order Flow Skills] indicator-parity | pine-script-update | data-validation | security-check | websocket-debugging'; echo '[Order Flow Agents] trading-logic-reviewer | silent-failure-hunter | planner | code-reviewer | refactor-cleaner | quant-analyst | team-lead'; echo '[Order Flow UI] Agent Hub tab visible in dashboard — open index.html and click AGENTS'; exit 0"
       }
     ]
   }
