@@ -1169,6 +1169,26 @@ const S = {
 };
 
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// TRADING CONSTANTS (inspired by ValueCell domain model)
+// ═══════════════════════════════════════════
+const TradeType = Object.freeze({ LONG: 'LONG', SHORT: 'SHORT' });
+const TradeSide = Object.freeze({ BUY: 'BUY', SELL: 'SELL' });
+const TradeAction = Object.freeze({
+  OPEN_LONG: 'OPEN_LONG', CLOSE_LONG: 'CLOSE_LONG',
+  OPEN_SHORT: 'OPEN_SHORT', CLOSE_SHORT: 'CLOSE_SHORT',
+  NOOP: 'NOOP'
+});
+const TxStatus = Object.freeze({
+  FILLED: 'FILLED', PARTIAL: 'PARTIAL',
+  REJECTED: 'REJECTED', ERROR: 'ERROR'
+});
+const MarketState = Object.freeze({
+  ABSORB: 'ABSORB', ACCUM: 'ACCUM', DISTR: 'DISTR', NEUTRAL: '-'
+});
+const TrendState = Object.freeze({ BULL: 'BULL', BEAR: 'BEAR', RANGE: 'RANGE' });
+
+// ═══════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════
 const fmt = v => { v=Math.abs(v); if(v>=1e12)return(v/1e12).toFixed(2)+'T'; if(v>=1e9)return(v/1e9).toFixed(2)+'B'; if(v>=1e6)return(v/1e6).toFixed(2)+'M'; if(v>=1e3)return(v/1e3).toFixed(1)+'K'; return v.toFixed(v<1?4:2); };
@@ -1982,6 +2002,7 @@ function runIndicators() {
   S.lastInd = ind;
   updateLeftPanel(ind, cur);
   updatePnL(ind, cur);
+  PaperTrader.processSignal(ind, S.currentTicker.sym, cur.close);
   document.getElementById('ftBars').textContent = n;
   // ═══ MCDX Plus Integration (v5) ═══
   if (S.bars.length >= 3) {
@@ -2011,9 +2032,11 @@ function runIndicators() {
     }
   }
   
-  // Update manual trades
+  // Update manual trades and paper positions
   if (S.bars.length > 0) {
-    manualTrading.updateOpenTrades(S.bars[S.bars.length - 1].close);
+    const lastClose = S.bars[S.bars.length - 1].close;
+    manualTrading.updateOpenTrades(lastClose);
+    PaperTrader.updatePositions(S.currentTicker.sym, lastClose);
   }
   
   // Update condition tooltips with exact values
@@ -2236,7 +2259,39 @@ function renderTrades() {
       <div class="risk-cell"><div style="font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.15em;color:var(--tx3)">KELLY</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--blue)">${rm.kelly.toFixed(1)}%</div></div>
     </div>`;
   }
-  html += `<button class="export-btn" onclick="exportTrades()" style="width:100%;margin:4px 0 8px">⬇ EXPORT CSV</button>`;
+  // Paper trading section
+  const paperPos = PaperTrader.getOpenPositions();
+  const paperDigest = PaperTrader.getDigest();
+  html += `<div style="border-top:1px solid var(--bd);padding:8px 10px;margin-top:4px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.15em;color:var(--tx3)">PAPER TRADING</div>
+      <button onclick="PaperTrader.toggle();renderTrades()" style="padding:4px 10px;background:${PaperTrader.enabled?'rgba(0,196,160,.15)':'var(--s1)'};border:1px solid ${PaperTrader.enabled?'rgba(0,196,160,.4)':'var(--bd)'};border-radius:5px;color:${PaperTrader.enabled?'var(--teal)':'var(--tx3)'};font-family:'JetBrains Mono',monospace;font-size:8px;cursor:pointer">${PaperTrader.enabled?'ON':'OFF'}</button>
+    </div>`;
+  if (paperPos.length) {
+    paperPos.forEach(p => {
+      const pct = p.pnlPercent || 0;
+      html += `<div class="open-pos ${p.side===TradeType.LONG?'bull-pos':'bear-pos'}" style="margin:3px 0">
+        <div class="op-hdr">
+          <span class="op-side ${p.side===TradeType.LONG?'long':'short'}">${p.side===TradeType.LONG?'P-LONG':'P-SHORT'}</span>
+          <span class="op-pnl ${pct>=0?'pos':'neg'}">${fmtP(pct)}</span>
+        </div>
+        <div class="op-details">
+          <div class="op-d">ENTRY <span>${p.entryPrice.toFixed(2)}</span></div>
+          <div class="op-d">NOW <span>${(p.currentPrice||0).toFixed(2)}</span></div>
+        </div>
+      </div>`;
+    });
+  }
+  if (paperDigest.count > 0) {
+    html += `<div class="pnl-grid" style="margin:4px 0">
+      <div class="pnl-stat"><div class="pnl-stat-n">P-PNL</div><div class="pnl-stat-v ${paperDigest.totalPnl>=0?'pos':'neg'}">${paperDigest.totalPnl.toFixed(2)}%</div></div>
+      <div class="pnl-stat"><div class="pnl-stat-n">P-WIN</div><div class="pnl-stat-v teal">${paperDigest.winRate.toFixed(0)}%</div></div>
+      <div class="pnl-stat"><div class="pnl-stat-n">P-TRADES</div><div class="pnl-stat-v amber">${paperDigest.count}</div></div>
+    </div>`;
+  }
+  html += `</div>`;
+
+  html += `<button class="export-btn" onclick="exportTrades()" style="width:100%;margin:4px 0 8px">EXPORT CSV</button>`;
 
   document.getElementById('rpContent').innerHTML = html;
   setTimeout(drawEquity, 10);
@@ -2991,6 +3046,7 @@ new ResizeObserver(() => {
 // INIT
 // ═══════════════════════════════════════════
 window.addEventListener('load', () => {
+  PaperTrader.init();
   initPanZoom();
   updateFavoriteStars();
   setTab('trades');
@@ -3151,6 +3207,246 @@ function calcRiskMetrics() {
   const avgL=losses.length?Math.abs(losses.reduce((a,b)=>a+b,0)/losses.length):0;
   const kelly=avgL>0?((W-(1-W)/(avgW/avgL))*100):0;
   return {sharpe,maxDD,kelly,winRate:W*100,n:pnls.length};
+}
+
+// ══════════════════════════════════════════════════════════════
+// POSITION SNAPSHOT & TRADE DIGEST (ValueCell pattern)
+// ══════════════════════════════════════════════════════════════
+function createPositionSnapshot(symbol, side, size, entryPrice, currentPrice) {
+  const direction = side === TradeType.LONG ? 1 : -1;
+  const unrealizedPnl = (currentPrice - entryPrice) * size * direction;
+  const pnlPercent = entryPrice > 0 ? (unrealizedPnl / (entryPrice * size)) * 100 : 0;
+  return { symbol, side, size, entryPrice, currentPrice, unrealizedPnl, pnlPercent, timestamp: Date.now() };
+}
+
+function computeTradeDigest(trades) {
+  if (!trades.length) return { totalPnl: 0, winRate: 0, sharpe: 0, maxDD: 0, count: 0 };
+  const pnls = trades.map(t => t.pnl || t.pnlPct || 0);
+  const wins = pnls.filter(p => p > 0).length;
+  const mean = pnls.reduce((a, b) => a + b, 0) / pnls.length;
+  const variance = pnls.length > 1
+    ? pnls.reduce((a, p) => a + (p - mean) ** 2, 0) / (pnls.length - 1)
+    : 0;
+  const stdDev = Math.sqrt(variance);
+  let peak = 0, maxDD = 0, equity = 0;
+  pnls.forEach(p => { equity += p; peak = Math.max(peak, equity); maxDD = Math.max(maxDD, peak - equity); });
+  return {
+    totalPnl: pnls.reduce((a, b) => a + b, 0),
+    winRate: (wins / pnls.length) * 100,
+    sharpe: stdDev > 0 ? (mean / stdDev) * Math.sqrt(252) : 0,
+    maxDD,
+    count: trades.length
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// PAPER TRADING MODE
+// ══════════════════════════════════════════════════════════════
+const PaperTrader = {
+  positions: [],
+  history: [],
+  enabled: false,
+
+  init() {
+    const saved = localStorage.getItem('of_paper_trades');
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        this.positions = data.positions || [];
+        this.history = data.history || [];
+        this.enabled = data.enabled || false;
+      } catch (e) { logAlert('info', 'Paper trade restore error: ' + e.message); }
+    }
+  },
+
+  _save() {
+    localStorage.setItem('of_paper_trades', JSON.stringify({
+      positions: this.positions, history: this.history.slice(-200), enabled: this.enabled
+    }));
+  },
+
+  toggle() {
+    this.enabled = !this.enabled;
+    this._save();
+    logAlert('info', 'Paper trading ' + (this.enabled ? 'ON' : 'OFF'));
+  },
+
+  execute(action, symbol, price, size) {
+    if (!this.enabled) return null;
+    if (!price || price <= 0 || !size || size <= 0) return null;
+    const trade = {
+      id: Date.now(), action, symbol, price, size,
+      timestamp: new Date().toISOString(), status: TxStatus.FILLED
+    };
+
+    if (action === TradeAction.OPEN_LONG || action === TradeAction.OPEN_SHORT) {
+      const side = action === TradeAction.OPEN_LONG ? TradeType.LONG : TradeType.SHORT;
+      this.positions.push(createPositionSnapshot(symbol, side, size, price, price));
+    } else if (action === TradeAction.CLOSE_LONG || action === TradeAction.CLOSE_SHORT) {
+      const side = action === TradeAction.CLOSE_LONG ? TradeType.LONG : TradeType.SHORT;
+      const idx = this.positions.findIndex(p => p.symbol === symbol && p.side === side);
+      if (idx >= 0) {
+        const pos = this.positions[idx];
+        const dir = pos.side === TradeType.LONG ? 1 : -1;
+        trade.pnl = (price - pos.entryPrice) * pos.size * dir;
+        trade.pnlPct = pos.entryPrice > 0 ? (trade.pnl / (pos.entryPrice * pos.size)) * 100 : 0;
+        this.positions.splice(idx, 1);
+      }
+    }
+
+    this.history.push(trade);
+    this._save();
+    return trade;
+  },
+
+  processSignal(signal, symbol, price) {
+    if (!this.enabled || !price || price <= 0) return;
+    const positionSize = 1;
+    const hasLong = this.positions.some(p => p.symbol === symbol && p.side === TradeType.LONG);
+    const hasShort = this.positions.some(p => p.symbol === symbol && p.side === TradeType.SHORT);
+
+    if (signal.longEntry && !hasLong) {
+      this.execute(TradeAction.OPEN_LONG, symbol, price, positionSize);
+      logAlert('long', 'Paper LONG @ ' + price.toFixed(2));
+    } else if (signal.shortEntry && !hasShort) {
+      this.execute(TradeAction.OPEN_SHORT, symbol, price, positionSize);
+      logAlert('short', 'Paper SHORT @ ' + price.toFixed(2));
+    }
+    if (signal.longExit && hasLong) {
+      this.execute(TradeAction.CLOSE_LONG, symbol, price, positionSize);
+      logAlert('info', 'Paper close LONG @ ' + price.toFixed(2));
+    }
+    if (signal.shortExit && hasShort) {
+      this.execute(TradeAction.CLOSE_SHORT, symbol, price, positionSize);
+      logAlert('info', 'Paper close SHORT @ ' + price.toFixed(2));
+    }
+  },
+
+  updatePositions(symbol, currentPrice) {
+    this.positions.forEach(p => {
+      if (p.symbol === symbol) {
+        const dir = p.side === TradeType.LONG ? 1 : -1;
+        p.currentPrice = currentPrice;
+        p.unrealizedPnl = (currentPrice - p.entryPrice) * p.size * dir;
+        p.pnlPercent = p.entryPrice > 0 ? (p.unrealizedPnl / (p.entryPrice * p.size)) * 100 : 0;
+      }
+    });
+  },
+
+  getDigest() { return computeTradeDigest(this.history.filter(h => h.pnl !== undefined)); },
+  getOpenPositions() { return this.positions; },
+  getClosedTrades() { return this.history.filter(h => h.pnl !== undefined); },
+  reset() { this.positions = []; this.history = []; this._save(); }
+};
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE PIPELINE (ValueCell data->features->decision pattern)
+// ══════════════════════════════════════════════════════════════
+function computeFeatures(bars) {
+  const n = bars.length;
+  if (n < 5) return null;
+  const closes = bars.map(b => b.close);
+  const volumes = bars.map(b => b.volume);
+  const bodies = bars.map(b => b.body || Math.abs(b.close - b.open));
+  return {
+    closes, volumes, bodies,
+    ema9: ema(closes, 9),
+    ema21: ema(closes, 21),
+    ema50: ema(closes, 50),
+    ema200: ema(closes, 200),
+    rsi: calcRSI(closes, 14),
+    vwap: calcSessionVWAP(bars),
+    smaVol20: sma(volumes, 20),
+    smaBody20: sma(bodies, 20),
+    barCount: n,
+    timestamp: Date.now()
+  };
+}
+
+function generateSignals(features, bars, config) {
+  if (!features || features.barCount < 5) return null;
+  const n = features.barCount;
+  const cur = bars[n - 1];
+  const { spikeMult = 2.0, length = 20 } = config || {};
+  const rsiOB = 65, rsiOS = 35;
+
+  const bullTrend = features.ema50[n - 1] > features.ema200[n - 1] && cur.close > features.vwap[n - 1];
+  const bearTrend = features.ema50[n - 1] < features.ema200[n - 1] && cur.close < features.vwap[n - 1];
+  const trendState = bullTrend ? TrendState.BULL : bearTrend ? TrendState.BEAR : TrendState.RANGE;
+
+  const volMAn = features.smaVol20[n - 1] || 1;
+  const bodyMAn = features.smaBody20[n - 1] || 1;
+
+  const htfVols = [];
+  for (let i = 4; i < n; i++) htfVols.push(features.volumes.slice(i - 4, i + 1).reduce((a, b) => a + b, 0));
+  const htfV = htfVols[htfVols.length - 1] || 0;
+  const htfMA = htfVols.length >= length ? htfVols.slice(-length).reduce((a, b) => a + b, 0) / length : htfV;
+  const htfSpike = htfV > htfMA * spikeMult;
+
+  const hasPivotLow = n > 11 && bars[n - 6].low < bars[n - 11].low && bars[n - 6].low < bars[n - 1].low;
+  const hasPivotHigh = n > 11 && bars[n - 6].high > bars[n - 11].high && bars[n - 6].high > bars[n - 1].high;
+  const bullDiv = hasPivotLow && cur.low < bars[n - 11].low && cur.delta > bars[n - 6].delta;
+  const bearDiv = hasPivotHigh && cur.high > bars[n - 11].high && cur.delta < bars[n - 6].delta;
+
+  const absorption = cur.volume > volMAn * 1.8 && (cur.body || 0) < bodyMAn * 0.5;
+  const hiddenAccum = cur.buyVol > cur.sellVol && n > 1 && cur.close <= bars[n - 2].close && cur.volume > volMAn;
+  const hiddenDistrib = cur.sellVol > cur.buyVol && n > 1 && cur.close >= bars[n - 2].close && cur.volume > volMAn;
+  const aboveAvgVol = cur.volume > volMAn;
+  const bullExhaust = cur.delta > 0 && n > 1 && cur.close < cur.open && cur.close <= bars[n - 2].close && (cur.body || 0) < bodyMAn && aboveAvgVol;
+  const bearExhaust = cur.delta < 0 && n > 1 && cur.close > cur.open && cur.close >= bars[n - 2].close && (cur.body || 0) < bodyMAn && aboveAvgVol;
+
+  const marketState = absorption ? MarketState.ABSORB : hiddenAccum ? MarketState.ACCUM : hiddenDistrib ? MarketState.DISTR : MarketState.NEUTRAL;
+  const rsiVal = features.rsi[n - 1] ?? 50;
+  const longEntry = bullTrend && htfSpike && rsiVal < rsiOB && (bullDiv || hiddenAccum) && !bullExhaust;
+  const shortEntry = bearTrend && htfSpike && rsiVal > rsiOS && (bearDiv || hiddenDistrib) && !bearExhaust;
+  const longExit = (bearExhaust || bearDiv) && !longEntry;
+  const shortExit = (bullExhaust || bullDiv) && !shortEntry;
+  const condScore = [bullTrend, htfSpike, (bullDiv || hiddenAccum), !bullExhaust, aboveAvgVol].filter(Boolean).length;
+
+  return {
+    trendState, bullTrend, bearTrend, marketState, htfSpike,
+    bullDiv, bearDiv, absorption, hiddenAccum, hiddenDistrib,
+    bullExhaust, bearExhaust, rsi: rsiVal,
+    longEntry, shortEntry, longExit, shortExit,
+    condScore, volMAn, aboveAvgVol,
+    action: longEntry ? TradeAction.OPEN_LONG : shortEntry ? TradeAction.OPEN_SHORT
+      : longExit ? TradeAction.CLOSE_LONG : shortExit ? TradeAction.CLOSE_SHORT : TradeAction.NOOP
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// GRID TRADING LEVELS
+// ══════════════════════════════════════════════════════════════
+function computeGridLevels(currentPrice, stepPct, maxSteps, baseFraction, direction) {
+  if (!currentPrice || currentPrice <= 0) return [];
+  const levels = [];
+  for (let i = 1; i <= maxSteps; i++) {
+    const offset = currentPrice * stepPct * i;
+    const fraction = baseFraction * i;
+    if (direction === TradeType.LONG || direction === 'LONG') {
+      levels.push({
+        price: +(currentPrice - offset).toFixed(8),
+        action: TradeAction.OPEN_LONG,
+        step: i, fraction,
+        label: 'BUY L' + i
+      });
+    } else {
+      levels.push({
+        price: +(currentPrice + offset).toFixed(8),
+        action: TradeAction.OPEN_SHORT,
+        step: i, fraction,
+        label: 'SELL S' + i
+      });
+    }
+  }
+  return levels;
+}
+
+function computeBidirectionalGrid(currentPrice, stepPct, maxSteps, baseFraction) {
+  return [
+    ...computeGridLevels(currentPrice, stepPct, maxSteps, baseFraction, TradeType.LONG),
+    ...computeGridLevels(currentPrice, stepPct, maxSteps, baseFraction, TradeType.SHORT)
+  ].sort((a, b) => a.price - b.price);
 }
 
 // ══════════════════════════════════════════════════════════════

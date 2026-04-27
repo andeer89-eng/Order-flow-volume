@@ -79,6 +79,14 @@ All mutable state lives in the `S` object. Key properties:
 | `sma(arr, n)` | Simple moving average |
 | `runIndicators()` | Main indicator pipeline (EMA, VWAP, CVD, divergence, signals) |
 | `computeIndicatorsForBars(bars)` | Indicator computation for arbitrary bar arrays (MTF/backtest) |
+| `computeFeatures(bars)` | Pure feature extraction (EMA, RSI, VWAP, SMA) |
+| `generateSignals(features, bars, config)` | Pure signal generation from features |
+| `createPositionSnapshot(sym, side, size, entry, current)` | Position with unrealized P&L |
+| `computeTradeDigest(trades)` | Aggregate stats: total P&L, win rate, Sharpe, max DD |
+| `computeGridLevels(price, step, max, frac, dir)` | Grid trading level computation |
+| `computeBidirectionalGrid(price, step, max, frac)` | Long + short grid levels |
+| `PaperTrader.execute(action, sym, price, size)` | Paper trade execution |
+| `PaperTrader.processSignal(signal, sym, price)` | Auto-execute signals in paper mode |
 | `_mapBinanceBar(k)` | Shared Binance kline → bar object mapper |
 | `_mapYahooBar(t, q, i)` | Shared Yahoo Finance → bar object mapper |
 | `aggregate4hBars(bars)` | Client-side 1h → 4h aggregation |
@@ -125,6 +133,15 @@ Pine Script v6 indicator (`overlay=false`, `max_bars_back=500`).
 All entry/exit signals must use `barstate.isconfirmed`. Never use `barstate.islast` for signals. The divergence logic uses stored `var float` pivot references — do not revert to `low[10]`/`delta[5]` style offsets.
 
 ---
+
+### Trading Constants
+
+- `TradeType`: `LONG`, `SHORT`
+- `TradeSide`: `BUY`, `SELL`
+- `TradeAction`: `OPEN_LONG`, `CLOSE_LONG`, `OPEN_SHORT`, `CLOSE_SHORT`, `NOOP`
+- `TxStatus`: `FILLED`, `PARTIAL`, `REJECTED`, `ERROR`
+- `MarketState`: `ABSORB`, `ACCUM`, `DISTR`, `NEUTRAL`
+- `TrendState`: `BULL`, `BEAR`, `RANGE`
 
 ## Critical Rules
 
@@ -180,6 +197,8 @@ order_flow_elite.pine          # TradingView Pine Script v6 indicator (285 lines
 order_flow_overlay.pine        # TradingView overlay indicator — PDH/PDL, ORB, SSL, EMA Cloud (~300 lines)
 CLAUDE.md                      # This file — project context for Claude Code
 README.md                      # Human-facing documentation
+CODEBASE_ANALYSIS.md           # Detailed codebase analysis with findings
+REPOSITORY_PATTERN_ANALYSIS.md # Cross-repo pattern analysis and recommendations
 .gitignore                     # Git ignore rules
 .htmlhintrc                    # HTMLHint linting config
 .claude/
@@ -225,11 +244,15 @@ Run the indicator test suite:
 
 ```bash
 node tests/indicators.test.js
+# or
+make test
 ```
 
 Tests cover: `esc()`, `sma()`, `ema()`, `calcRSI()`, `_mapBinanceBar()`,
-`_mapYahooBar()`, `aggregate4hBars()`. Verify all tests pass before merging
-changes to indicator logic.
+`_mapYahooBar()`, `aggregate4hBars()`, `createPositionSnapshot()`,
+`computeTradeDigest()`, `computeGridLevels()`, `computeBidirectionalGrid()`,
+`computeFeatures()`, `generateSignals()`, and all trading constants.
+Verify all tests pass before merging changes to indicator logic.
 
 Manual dashboard testing:
 1. Open `index.html` in a modern browser (Chrome/Firefox/Edge)

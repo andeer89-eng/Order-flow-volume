@@ -492,3 +492,487 @@ file.
 
 *Analysis generated from [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
 applied to [andeer89-eng/Order-flow-volume](https://github.com/andeer89-eng/Order-flow-volume)*
+
+---
+---
+
+# Repository Pattern Analysis: ValueCell -> Order Flow Volume
+
+> Cross-repository analysis identifying actionable patterns from
+> [ValueCell-ai/valuecell](https://github.com/ValueCell-ai/valuecell)
+> that benefit the Order Flow Volume trading dashboard project.
+
+---
+
+## Analysis
+
+### Source Repository Overview
+
+**ValueCell** is a community-driven, multi-agent platform for financial
+applications built with Python (async-first) and React/TypeScript (Vite + Tauri).
+Apache 2.0 licensed. Key characteristics:
+
+- **Multi-agent architecture**: Specialized agents for research, grid trading,
+  news retrieval, and prompt-based strategy execution
+- **Exchange integration**: Binance, OKX, Hyperliquid, Coinbase, Gate.io, MEXC
+  via CCXT library with paper trading support
+- **Trading domain model**: Comprehensive type system distinguishing semantic
+  position actions (OPEN_LONG/CLOSE_SHORT) from execution sides (BUY/SELL)
+- **Frontend**: React + TypeScript + Vite + Tauri (desktop), with TradingView
+  widget integration, Zustand state stores, custom hooks (SSE, debounce,
+  chart resize), and i18n
+- **Backend**: Python 3.12+, async/await throughout, Pydantic models, loguru
+  logging, SQLite + LanceDB vector storage
+- **Infrastructure**: Makefile (format/lint/test), start.sh bootstrap script,
+  Docker support, cross-platform installers
+
+### Architecture Patterns
+
+1. **Clean separation of concerns**: `data/` -> `features/` -> `decision/` ->
+   `execution/` pipeline for trading strategies
+2. **Interface-first design**: Every layer has a `BaseXxx` abstract class with
+   concrete implementations (e.g., `BaseExecutionGateway` -> `PaperExecutionGateway`,
+   `CCXTExecutionGateway`)
+3. **Feature pipeline pattern**: Raw market data -> `FeatureVector` -> decision
+   composer -> `TradeInstruction` -> execution gateway
+4. **Component-based streaming**: Typed response events (StreamResponseEvent,
+   TaskStatusEvent) for real-time UI updates via SSE
+5. **Audit trail**: Every trade decision recorded as `HistoryRecord` with
+   `TradeDigest` aggregation for performance analytics (Sharpe ratio, win rate)
+
+### Technology Stack
+
+| Layer | ValueCell | Order Flow Volume |
+|---|---|---|
+| Frontend | React + TypeScript + Vite | Vanilla HTML/CSS/JS |
+| Charts | TradingView widget (embedded) | Custom Canvas 2D |
+| State | Zustand stores | Global `S` object |
+| Backend | Python + FastAPI + SSE | None (browser-only) |
+| Exchange | CCXT (multi-exchange) | Binance REST + WS |
+| Data | SQLite + LanceDB | localStorage |
+| Build | Vite + Tauri + Makefile | None |
+
+---
+
+## Valuable Elements
+
+### 1. Trading Domain Model & Type System
+
+**What it is**: ValueCell's `models.py` defines a comprehensive type hierarchy
+for trading: `TradeType` (LONG/SHORT), `TradeSide` (BUY/SELL),
+`TradeDecisionAction` (OPEN_LONG/CLOSE_LONG/OPEN_SHORT/CLOSE_SHORT/NOOP),
+`TxStatus` (FILLED/PARTIAL/REJECTED/ERROR), `MarketType` (SPOT/FUTURE/SWAP),
+`PriceMode` (MARKET/LIMIT), plus data models for `Candle`, `PositionSnapshot`,
+`PortfolioView`, `TradeInstruction`, and `TxResult`.
+
+**Why it's valuable**: The Order Flow Volume dashboard has manual trade tracking
+in the portfolio module but uses loose object structures. Adopting a formal type
+vocabulary (even as JS constants/enums) would prevent bugs in P&L calculations,
+make the backtest engine more robust, and prepare the codebase for features like
+short positions and stop-loss orders.
+
+**Key patterns**:
+- Semantic actions (OPEN_LONG) separate from execution mechanics (BUY)
+- `PositionSnapshot` tracks entry price, unrealized P&L, margin, leverage
+- `Constraints` model enforces risk guardrails (max positions, max leverage)
+- `TradeDigest` computes Sharpe ratio, win rate, total P&L
+
+### 2. Strategy Pipeline Architecture (Data -> Features -> Decision -> Execution)
+
+**What it is**: ValueCell's trading agents follow a clean pipeline:
+1. `BaseMarketDataSource` fetches OHLCV candles
+2. `BaseFeaturesPipeline` computes technical indicators (`FeatureVector`)
+3. `BaseComposer` produces `TradeDecisionItem` with action + confidence
+4. `BaseExecutionGateway` translates decisions to exchange orders
+
+**Why it's valuable**: The Order Flow Volume dashboard mixes data fetching,
+indicator computation, signal generation, and rendering in a single flow
+(`runIndicators()` does EMA + VWAP + CVD + divergence + entry signals + chart
+state in one function). Adopting a pipeline pattern would:
+- Allow independent testing of each stage
+- Enable swapping data sources without touching indicator logic
+- Separate signal generation from visualization
+- Make the backtest engine reuse the same pipeline
+
+**Key patterns**:
+- Each stage has an abstract interface + concrete implementation
+- `FeatureVector` is a typed snapshot of computed indicators at a point in time
+- `ComposeContext` bundles features + portfolio state + history for decisions
+- Pipeline is async-first, supporting streaming updates
+
+### 3. Paper Trading / Simulation Gateway
+
+**What it is**: ValueCell implements `PaperExecutionGateway` alongside
+`CCXTExecutionGateway` with the same interface. Paper trading simulates order
+fills without real exchange interaction, enabling safe strategy testing.
+
+**Why it's valuable**: The Order Flow Volume backtest engine replays historical
+bars but has no paper trading mode for forward-testing strategies in real-time.
+A paper execution gateway pattern would let users test entry signals against
+live WebSocket data without risking capital.
+
+**Key patterns**:
+- Same `BaseExecutionGateway` interface for both paper and live
+- Paper gateway simulates fill at current market price
+- Portfolio state tracked in-memory with `InMemoryPortfolioService`
+- Switch between modes via configuration flag
+
+### 4. Position & Portfolio Tracking with P&L Metrics
+
+**What it is**: ValueCell's `PositionSnapshot` tracks per-instrument state
+(entry price, size, unrealized P&L, margin), while `PortfolioView` aggregates
+across positions with `Constraints` for risk management. `TradeDigest`
+computes rolling performance stats including Sharpe ratio.
+
+**Why it's valuable**: The Order Flow Volume portfolio module uses basic
+trade arrays in localStorage. Adding structured position tracking with
+real-time P&L based on WebSocket prices would enhance the trading module
+significantly. Sharpe ratio and win rate metrics would improve the backtest
+reporting.
+
+**Key patterns**:
+- `PositionSnapshot`: `{ symbol, side, size, entryPrice, unrealizedPnl, margin }`
+- `PortfolioView`: `{ positions[], equity, availableBalance, constraints }`
+- `TradeDigest`: `{ totalPnl, winRate, sharpeRatio, trades[] }`
+- P&L computed as `(currentPrice - entryPrice) * size * direction`
+
+### 5. TradingView Widget Integration Pattern
+
+**What it is**: ValueCell's frontend embeds TradingView's Advanced Chart widget
+via dynamic script injection. The component handles symbol mapping (including
+HKEX normalization), theme adaptation, lifecycle cleanup, and is memoized for
+performance.
+
+**Why it's valuable**: The Order Flow Volume dashboard uses a custom Canvas 2D
+charting engine. While the custom chart offers fine-grained control for order
+flow visualization (delta bars, volume profile), offering a TradingView
+fallback/alternative view would provide standard technical analysis tools
+(drawing tools, indicators library) without reimplementation.
+
+**Key patterns**:
+- Dynamic `<script>` injection with cleanup on unmount
+- Symbol mapping JSON for exchange-specific transformations
+- `memo()` wrapper to prevent unnecessary re-renders
+- Theme-aware configuration (light/dark)
+
+### 6. Server-Sent Events (SSE) for Streaming Updates
+
+**What it is**: ValueCell uses SSE (`use-sse.ts` hook) for streaming agent
+responses from backend to frontend, with typed event categories
+(StreamResponseEvent, TaskStatusEvent, NotifyResponseEvent).
+
+**Why it's valuable**: The Order Flow Volume dashboard uses WebSocket for
+Binance data but has no server component. If the project ever adds a backend
+(for multi-user scenarios, persistent alerts, or AI-powered analysis), the SSE
+pattern provides a simpler alternative to WebSocket for server-to-client
+streaming with automatic reconnection.
+
+**Key patterns**:
+- Custom React hook encapsulating EventSource lifecycle
+- Typed event payloads matching backend response models
+- Automatic reconnection with error handling
+- Component-level subscription management
+
+### 7. Grid Trading Strategy
+
+**What it is**: ValueCell's `GridStrategyAgent` implements a grid trading
+algorithm with configurable parameters: `step_pct` (price step percentage),
+`max_steps` (grid levels), `base_fraction` (position size per level). Supports
+long-only (spot) and bi-directional (derivatives) modes.
+
+**Why it's valuable**: The Order Flow Volume dashboard detects entry signals
+but has no position sizing or grid/DCA logic. Grid trading is a natural
+complement to order flow analysis: detecting absorption zones (high delta)
+and placing grid orders around them.
+
+**Key patterns**:
+- `step_pct=0.001` (0.1% per step) for sensitive detection
+- `max_steps=3` limits maximum grid exposure
+- `base_fraction=0.08` (8% of equity per level)
+- `use_llm_params=True` allows AI to adjust grid parameters dynamically
+- Long-only for spot, bi-directional for perpetuals
+
+### 8. Makefile-Based Development Workflow
+
+**What it is**: ValueCell uses a simple Makefile with three targets: `format`
+(ruff + isort), `lint` (ruff check), `test` (pytest). The `start.sh` script
+handles dependency installation and process management.
+
+**Why it's valuable**: The Order Flow Volume project has no automation. Even
+for a frontend-only project, a Makefile can orchestrate test running, linting
+(if added), and deployment preparation.
+
+**Key patterns**:
+```makefile
+.PHONY: test lint
+
+test:
+	node tests/indicators.test.js
+
+lint:
+	@echo "Lint target placeholder — add ESLint when ready"
+```
+
+### 9. Internationalization (i18n) Structure
+
+**What it is**: ValueCell's frontend has an `i18n/` directory and provides
+README translations in Japanese, Simplified Chinese, and Traditional Chinese.
+
+**Why it's valuable**: The Order Flow Volume dashboard has a global audience
+(crypto traders worldwide). If expanding to non-English markets, the i18n
+pattern (locale files, translation keys in UI) is worth adopting early.
+
+### 10. Cross-Platform Launch Script
+
+**What it is**: ValueCell's `start.sh` handles dependency detection and
+installation (`bun`, `uv`), environment configuration (OS-specific paths),
+service startup with PID tracking, and graceful shutdown via trap handlers.
+Supports `--no-frontend` and `--no-backend` flags.
+
+**Why it's valuable**: If the Order Flow Volume project adds a build step or
+server component, a startup script prevents "works on my machine" issues.
+The pattern of PID tracking + trap cleanup is immediately useful.
+
+---
+
+## Implementation Recommendations
+
+### Priority 1: Trading Constants & Type Vocabulary (Immediate, Low Complexity)
+
+Add structured constants to the dashboard for trade types and actions.
+
+```javascript
+// Trading type constants (inspired by ValueCell models.py)
+const TradeType = Object.freeze({ LONG: 'LONG', SHORT: 'SHORT' });
+const TradeSide = Object.freeze({ BUY: 'BUY', SELL: 'SELL' });
+const TradeAction = Object.freeze({
+  OPEN_LONG: 'OPEN_LONG', CLOSE_LONG: 'CLOSE_LONG',
+  OPEN_SHORT: 'OPEN_SHORT', CLOSE_SHORT: 'CLOSE_SHORT',
+  NOOP: 'NOOP'
+});
+const TxStatus = Object.freeze({
+  FILLED: 'FILLED', PARTIAL: 'PARTIAL',
+  REJECTED: 'REJECTED', ERROR: 'ERROR'
+});
+```
+
+**Steps**:
+1. Add constants near the top of the JS section in `index.html`
+2. Refactor existing portfolio trade entries to use these constants
+3. Update backtest engine to use `TradeAction` for signal classification
+4. Use `TxStatus` for paper trade result tracking
+
+### Priority 2: Portfolio Position Snapshot Model (Medium Complexity)
+
+Replace loose trade objects with structured position tracking.
+
+```javascript
+function createPositionSnapshot(symbol, side, size, entryPrice, currentPrice) {
+  const direction = side === TradeType.LONG ? 1 : -1;
+  const unrealizedPnl = (currentPrice - entryPrice) * size * direction;
+  const pnlPercent = (unrealizedPnl / (entryPrice * size)) * 100;
+  return {
+    symbol, side, size, entryPrice, currentPrice,
+    unrealizedPnl, pnlPercent,
+    timestamp: Date.now()
+  };
+}
+
+function computeTradeDigest(trades) {
+  if (!trades.length) return { totalPnl: 0, winRate: 0, sharpe: 0, count: 0 };
+  const pnls = trades.map(t => t.pnl || 0);
+  const wins = pnls.filter(p => p > 0).length;
+  const mean = pnls.reduce((a, b) => a + b, 0) / pnls.length;
+  const variance = pnls.reduce((a, p) => a + (p - mean) ** 2, 0) / pnls.length;
+  const stdDev = Math.sqrt(variance);
+  return {
+    totalPnl: pnls.reduce((a, b) => a + b, 0),
+    winRate: (wins / pnls.length) * 100,
+    sharpe: stdDev > 0 ? mean / stdDev : 0,
+    count: trades.length
+  };
+}
+```
+
+**Steps**:
+1. Add `createPositionSnapshot()` and `computeTradeDigest()` functions
+2. Update portfolio rendering to show unrealized P&L using live prices
+3. Add Sharpe ratio and win rate to backtest results display
+4. Persist position snapshots to localStorage
+
+### Priority 3: Strategy Pipeline Separation (High Complexity, Long-term)
+
+Refactor `runIndicators()` into discrete pipeline stages following ValueCell's
+`data -> features -> decision` pattern.
+
+```javascript
+// Stage 1: Feature computation (pure function, testable)
+function computeFeatures(bars) {
+  const closes = bars.map(b => b.close);
+  return {
+    ema9: ema(closes, 9),
+    ema21: ema(closes, 21),
+    rsi: calcRSI(closes, 14),
+    vwap: calcSessionVWAP(bars),
+    cvd: bars.map(b => b.delta),
+    volumes: bars.map(b => b.volume),
+    timestamp: Date.now()
+  };
+}
+
+// Stage 2: Signal generation (pure function, testable)
+function generateSignals(features, config) {
+  const n = features.ema9.length;
+  const rsiVal = features.rsi[n - 1] ?? 50;
+  const bullTrend = features.ema9[n - 1] > features.ema21[n - 1];
+  // ... divergence detection, exhaustion check ...
+  return {
+    longEntry: bullTrend && rsiVal < config.rsiOB && /* ... */,
+    shortEntry: !bullTrend && rsiVal > config.rsiOS && /* ... */,
+    rsi: rsiVal,
+    trend: bullTrend ? 'BULL' : 'BEAR'
+  };
+}
+
+// Stage 3: Rendering (side effects, not testable in isolation)
+function renderSignals(signals, features) {
+  // Canvas drawing, DOM updates
+}
+```
+
+**Steps**:
+1. Extract pure computation into `computeFeatures()` — test with existing suite
+2. Extract signal logic into `generateSignals()` — add tests
+3. Keep rendering as the final stage consuming computed data
+4. Backtest engine reuses stages 1-2 without stage 3
+
+### Priority 4: Paper Trading Mode (Medium Complexity)
+
+Add a forward-testing mode that evaluates signals against live data without
+executing trades.
+
+```javascript
+const PaperTrader = {
+  positions: [],
+  history: [],
+
+  executePaperTrade(action, symbol, price, size) {
+    const trade = {
+      id: Date.now(),
+      action, symbol, price, size,
+      timestamp: new Date().toISOString(),
+      status: TxStatus.FILLED
+    };
+    this.history.push(trade);
+
+    if (action === TradeAction.OPEN_LONG) {
+      this.positions.push(createPositionSnapshot(symbol, TradeType.LONG, size, price, price));
+    } else if (action === TradeAction.CLOSE_LONG) {
+      const idx = this.positions.findIndex(p => p.symbol === symbol && p.side === TradeType.LONG);
+      if (idx >= 0) {
+        trade.pnl = (price - this.positions[idx].entryPrice) * size;
+        this.positions.splice(idx, 1);
+      }
+    }
+    return trade;
+  },
+
+  updatePositions(symbol, currentPrice) {
+    this.positions.forEach(p => {
+      if (p.symbol === symbol) {
+        const dir = p.side === TradeType.LONG ? 1 : -1;
+        p.currentPrice = currentPrice;
+        p.unrealizedPnl = (currentPrice - p.entryPrice) * p.size * dir;
+      }
+    });
+  },
+
+  getDigest() {
+    return computeTradeDigest(this.history.filter(h => h.pnl !== undefined));
+  }
+};
+```
+
+### Priority 5: Makefile for Project Automation (Low Complexity)
+
+```makefile
+.PHONY: test lint serve
+
+test:
+	node tests/indicators.test.js
+
+lint:
+	@echo "No linter configured yet"
+
+serve:
+	python3 -m http.server 8080
+
+clean:
+	@echo "Nothing to clean (single-file project)"
+```
+
+### Priority 6: Grid Trading Logic (High Complexity)
+
+Adapt ValueCell's grid trading concept for order flow analysis. Instead of
+automated exchange execution, generate grid level recommendations based on
+detected absorption zones.
+
+```javascript
+function computeGridLevels(currentPrice, stepPct, maxSteps, direction) {
+  const levels = [];
+  for (let i = 1; i <= maxSteps; i++) {
+    const offset = currentPrice * stepPct * i;
+    if (direction === 'LONG') {
+      levels.push({ price: currentPrice - offset, action: TradeAction.OPEN_LONG, step: i });
+    } else {
+      levels.push({ price: currentPrice + offset, action: TradeAction.OPEN_SHORT, step: i });
+    }
+  }
+  return levels;
+}
+```
+
+---
+
+## Priority Ranking
+
+| # | Element | Impact | Complexity | Risk | Priority |
+|---|---------|--------|------------|------|----------|
+| 1 | Trading constants/enums | Medium | Low | None | **Immediate** |
+| 2 | Position snapshot + P&L model | High | Medium | Low | **This week** |
+| 3 | Strategy pipeline separation | Very High | High | Medium | **Next sprint** |
+| 4 | Paper trading mode | High | Medium | Low | **Next sprint** |
+| 5 | Makefile automation | Low | Trivial | None | **Immediate** |
+| 6 | Grid trading logic | Medium | High | Medium | **Long-term** |
+| 7 | TradingView widget fallback | Medium | Medium | Low | **Long-term** |
+| 8 | i18n structure | Low | Medium | None | **Future** |
+| 9 | SSE streaming pattern | Low | High | Medium | **Future** |
+| 10 | Cross-platform launcher | Low | Low | None | **When needed** |
+
+### Quick Wins (< 1 hour)
+- Trading constants/enums (Priority 1)
+- Makefile with test target (Priority 5)
+
+### Short-term (1-2 days)
+- Position snapshot model with P&L tracking (Priority 2)
+- Paper trading simulation (Priority 4)
+
+### Long-term (weeks)
+- Strategy pipeline decomposition (Priority 3)
+- Grid trading integration (Priority 6)
+- TradingView widget as alternative chart view (Priority 7)
+
+### Key Takeaway
+
+ValueCell's strongest contribution to Order Flow Volume is its **trading domain
+model vocabulary** — the clean separation of position intent (OPEN_LONG) from
+execution mechanics (BUY), structured position snapshots with real-time P&L,
+and the data-features-decision-execution pipeline pattern. These patterns would
+significantly improve the Order Flow Volume dashboard's portfolio tracking,
+backtest reporting, and signal generation architecture, while remaining
+compatible with the current vanilla JS implementation.
+
+---
+
+*Analysis generated from [ValueCell-ai/valuecell](https://github.com/ValueCell-ai/valuecell)
+applied to [andeer89-eng/Order-flow-volume](https://github.com/andeer89-eng/Order-flow-volume)*
