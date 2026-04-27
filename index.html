@@ -354,6 +354,81 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 .ai-btn:hover{background:rgba(74,124,220,.22)}
 .ai-thinking{animation:pulse .8s ease infinite;color:var(--tx3);font-style:italic}
 
+/* ── ENHANCED AI BOX V2 ── */
+.ai-box-v2{background:linear-gradient(135deg,rgba(74,124,220,.08),rgba(155,89,182,.05));border:1px solid rgba(74,124,220,.3);border-radius:10px;padding:13px;margin-top:8px;position:relative;overflow:hidden}
+.ai-box-v2::before{content:'';position:absolute;top:0;left:15%;right:15%;height:1px;background:linear-gradient(90deg,transparent,rgba(74,124,220,.6),rgba(155,89,182,.5),transparent)}
+.ai-hdr-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.ai-label-v2{font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:.2em;color:var(--blue);text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.ai-label-v2 .ai-dot{width:5px;height:5px;border-radius:50%;background:var(--blue);box-shadow:0 0 5px var(--blue);flex-shrink:0}
+.ai-model-badge{font-family:'JetBrains Mono',monospace;font-size:7px;padding:2px 6px;background:rgba(74,124,220,.12);border:1px solid rgba(74,124,220,.25);border-radius:3px;color:var(--tx3);letter-spacing:.06em}
+.ai-stream{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--tx1);line-height:1.75;letter-spacing:.02em;min-height:20px;transition:color .3s}
+.ai-cursor{display:inline-block;width:7px;height:10px;background:var(--blue);border-radius:1px;margin-left:2px;animation:blink .6s step-end infinite;vertical-align:middle}
+
+/* ── AGENT HUB ── */
+.agent-hub{padding:12px;display:flex;flex-direction:column;gap:10px;height:100%;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bd) transparent}
+.agent-hub::-webkit-scrollbar{width:3px}.agent-hub::-webkit-scrollbar-thumb{background:var(--bd2)}
+.agent-hub-hdr{display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.agent-hub-title{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.22em;color:var(--tx2);text-transform:uppercase}
+.agent-count-badge{font-family:'JetBrains Mono',monospace;font-size:8px;padding:2px 8px;background:rgba(155,89,182,.15);border:1px solid rgba(155,89,182,.35);border-radius:10px;color:var(--purple);letter-spacing:.08em}
+.agent-hint{font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);line-height:1.65;padding:7px 9px;background:rgba(74,124,220,.05);border:1px solid rgba(74,124,220,.12);border-radius:6px;flex-shrink:0}
+.agent-hint span{color:var(--blue)}
+.agent-card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;transition:border-color .25s,transform .2s,box-shadow .25s;position:relative;overflow:hidden;flex-shrink:0}
+.agent-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:transparent;transition:background .3s}
+.agent-card:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.agent-card:hover::after{background:var(--agent-glow, rgba(155,89,182,.6))}
+.agent-card-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.agent-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.04)}
+.agent-name{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--tx1);letter-spacing:.04em;flex:1;line-height:1.3}
+.agent-tier{font-family:'JetBrains Mono',monospace;font-size:7px;padding:2px 7px;border-radius:3px;font-weight:700;letter-spacing:.12em;flex-shrink:0}
+.agent-tier.opus{background:rgba(155,89,182,.18);border:1px solid rgba(155,89,182,.4);color:var(--purple)}
+.agent-tier.sonnet{background:rgba(74,124,220,.14);border:1px solid rgba(74,124,220,.35);color:var(--blue)}
+.agent-tier.haiku{background:rgba(0,196,160,.1);border:1px solid rgba(0,196,160,.3);color:var(--teal)}
+.agent-desc{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2);line-height:1.65;margin-bottom:9px}
+.agent-triggers{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.agent-trigger-pill{font-family:'JetBrains Mono',monospace;font-size:6px;padding:2px 6px;background:rgba(255,255,255,.04);border:1px solid var(--bd);border-radius:3px;color:var(--tx3);letter-spacing:.05em}
+.agent-foot{display:flex;align-items:center;gap:8px}
+.agent-status{display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:7px;color:var(--tx3);letter-spacing:.1em}
+.agent-status-dot{width:5px;height:5px;border-radius:50%;background:var(--tx3);flex-shrink:0;transition:background .3s,box-shadow .3s}
+.agent-status-dot.running{background:var(--bull);box-shadow:0 0 6px var(--bull);animation:blink 1s infinite}
+.agent-copy-btn{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:7px;padding:4px 10px;background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.3);border-radius:4px;color:var(--purple);cursor:pointer;transition:all .2s;letter-spacing:.09em;white-space:nowrap}
+.agent-copy-btn:hover{background:rgba(155,89,182,.22);border-color:rgba(155,89,182,.55)}
+.agent-copy-btn.copied{background:rgba(34,214,142,.1);border-color:rgba(34,214,142,.3);color:var(--bull)}
+
+/* ── HEADER AGENT BADGE ── */
+.hdr-agents-btn{display:flex;align-items:center;gap:5px;padding:5px 9px;background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.3);border-radius:5px;color:var(--purple);font-family:'JetBrains Mono',monospace;font-size:8px;cursor:pointer;transition:all .2s;letter-spacing:.07em;white-space:nowrap;position:relative}
+.hdr-agents-btn:hover{background:rgba(155,89,182,.2);border-color:rgba(155,89,182,.55)}
+.hdr-agents-btn .ag-dot{width:5px;height:5px;border-radius:50%;background:var(--purple);flex-shrink:0;box-shadow:0 0 5px var(--purple)}
+.hdr-agents-btn .ag-count{font-size:7px;background:rgba(155,89,182,.3);padding:1px 4px;border-radius:3px}
+
+/* ── TOAST NOTIFICATION SYSTEM ── */
+#toastContainer{position:fixed;top:66px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:320px}
+.toast{pointer-events:all;display:flex;align-items:flex-start;gap:10px;background:var(--card2);border:1px solid var(--bd2);border-radius:10px;padding:11px 14px;box-shadow:0 16px 50px rgba(0,0,0,.65);animation:toastIn .32s cubic-bezier(.34,1.4,.64,1);position:relative;overflow:hidden}
+.toast::after{content:'';position:absolute;bottom:0;left:0;height:2px;animation:toastBar 4.2s linear forwards}
+.toast.toast-info::after{background:var(--blue)}
+.toast.toast-success::after{background:var(--bull)}
+.toast.toast-warning::after{background:var(--amber)}
+.toast.toast-agent::after{background:var(--purple)}
+.toast.toast-error::after{background:var(--bear)}
+.toast.toast-info{border-left:3px solid rgba(74,124,220,.5)}
+.toast.toast-success{border-left:3px solid rgba(34,214,142,.5)}
+.toast.toast-warning{border-left:3px solid rgba(245,166,35,.5)}
+.toast.toast-agent{border-left:3px solid rgba(155,89,182,.6)}
+.toast.toast-error{border-left:3px solid rgba(240,73,104,.5)}
+.toast-icon{font-size:16px;flex-shrink:0;margin-top:1px;line-height:1}
+.toast-body{flex:1;min-width:0}
+.toast-title{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;color:var(--tx1);letter-spacing:.07em;margin-bottom:3px}
+.toast-msg{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--tx2);line-height:1.55}
+.toast-close{font-size:14px;color:var(--tx3);cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1;margin-top:-1px;transition:color .15s;background:none;border:none}
+.toast-close:hover{color:var(--tx1)}
+.toast.removing{animation:toastOut .25s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateX(120%)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(120%)}}
+@keyframes toastBar{from{width:100%}to{width:0}}
+
+/* ── SIGNAL CARD ACTIVE GLOW ── */
+.sig-glow-long{box-shadow:0 0 0 1px rgba(34,214,142,.25),0 6px 24px rgba(34,214,142,.1)!important}
+.sig-glow-short{box-shadow:0 0 0 1px rgba(240,73,104,.25),0 6px 24px rgba(240,73,104,.1)!important}
+
 /* ── RISK METRICS ── */
 .risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:8px 14px;border-bottom:1px solid var(--bd)}
 .risk-cell{background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:8px}
@@ -496,6 +571,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
     <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onclick="openManualTrade()">+ TRADE</button>
     <button class="hdr-btn" style="background:rgba(0,196,160,.12);border-color:rgba(0,196,160,.4);color:var(--teal)" onclick="downloadIndicator()">⬇ PINE SCRIPT</button>
     <button class="hdr-btn" style="background:rgba(155,89,182,.12);border-color:rgba(155,89,182,.35);color:var(--purple)" onclick="downloadOverlayIndicator()">⬇ OVERLAY</button>
+    <button class="hdr-agents-btn" onclick="setTab('agents')" title="Open Agent Hub"><span class="ag-dot"></span>AGENTS<span class="ag-count">7</span></button>
     <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">☀ DAY</button>
   </div>
 </div>
@@ -726,6 +802,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
       <div class="rp-tab" id="tab-alerts" onclick="setTab('alerts')">ALERTS</div>
       <div class="rp-tab" id="tab-settings" onclick="setTab('settings')">SETTINGS</div>
       <div class="rp-tab" id="tab-guide" onclick="setTab('guide')">GUIDE</div>
+      <div class="rp-tab" id="tab-agents" onclick="setTab('agents')" style="color:var(--purple);position:relative">AGENTS<span style="position:absolute;top:4px;right:4px;width:4px;height:4px;border-radius:50%;background:var(--purple);box-shadow:0 0 5px var(--purple)"></span></div>
     </div>
     <div class="rp-content" id="rpContent"></div>
   </div>
@@ -2808,7 +2885,7 @@ function drawVolChart() {
 // ═══════════════════════════════════════════
 function setTab(tab) {
   S.currentTab=tab;
-  ['trades','backtest','portfolio','alerts','settings','guide'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
+  ['trades','backtest','portfolio','alerts','settings','guide','agents'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.className='rp-tab'+(t===tab?' on':'');});
   const c=document.getElementById('rpContent');
   if(tab==='settings'){renderSettingsWithStrategies();return;}
   if(tab==='alerts'){renderAlerts();return;}
@@ -2816,6 +2893,7 @@ function setTab(tab) {
   if(tab==='backtest'){renderBacktest();return;}
   if(tab==='portfolio'){renderPortfolio();return;}
   if(tab==='guide'){renderGuide();return;}
+  if(tab==='agents'){renderAgents();return;}
 }
 function setView(v){
   resetChartState();S.currentView=v;
@@ -2900,6 +2978,10 @@ function logAlert(type, msg) {
   if(alertBuf.length>100)alertBuf.pop();
   const list=document.getElementById('alertList');
   if(list){const row=document.createElement('div');row.className='al-row '+type;row.innerHTML=`<span class="al-time">${ts()}</span>${msg}`;list.insertBefore(row,list.firstChild);while(list.children.length>40)list.removeChild(list.lastChild);}
+  // Surface important trading events as toasts
+  if(type==='long'){showToast('success','LONG SIGNAL',msg,5500);}
+  else if(type==='short'){showToast('error','SHORT SIGNAL',msg,5500);}
+  else if(type==='exit'){showToast('warning','EXIT SIGNAL',msg,4500);}
 }
 
 // ═══════════════════════════════════════════
@@ -4766,6 +4848,160 @@ alertcondition(votes <= -5 and barstate.isconfirmed, "Traffic Light BEAR", "Traf
   URL.revokeObjectURL(url2);
 }
 
+
+// ═══════════════════════════════════════════
+// TOAST NOTIFICATION SYSTEM
+// ═══════════════════════════════════════════
+const TOAST_DURATION = 4200;
+function showToast(type, title, msg, duration) {
+  const dur = duration || TOAST_DURATION;
+  const icons = {info:'ℹ️', success:'✅', warning:'⚠️', agent:'🤖', error:'❌'};
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span><div class="toast-body"><div class="toast-title">${esc(title)}</div><div class="toast-msg">${esc(msg)}</div></div><button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('removing');
+    setTimeout(() => toast.remove(), 280);
+  }, dur);
+}
+
+// ═══════════════════════════════════════════
+// AGENT HUB
+// ═══════════════════════════════════════════
+const AGENTS_REGISTRY = [
+  {
+    id: 'trading-logic-reviewer',
+    name: 'Trading Logic Reviewer',
+    tier: 'opus',
+    icon: '📊',
+    desc: 'Financial indicator logic, Pine Script parity, no-repaint rules, XSS review. The specialist for all signal-related changes.',
+    triggers: ['Signal logic changed', 'Pine Script edited', 'runIndicators() modified', 'Entry/exit logic updated'],
+    invoke: 'Agent({\n  subagent_type: "trading-logic-reviewer",\n  description: "Review indicator changes for parity and safety"\n})',
+    glow: 'rgba(155,89,182,.7)'
+  },
+  {
+    id: 'silent-failure-hunter',
+    name: 'Silent Failure Hunter',
+    tier: 'sonnet',
+    icon: '🔍',
+    desc: 'Zero-tolerance scan for empty catch blocks, swallowed errors, missing AbortError filters, and dangerous .catch(()=>[]) fallbacks.',
+    triggers: ['New fetch() added', 'WebSocket handler modified', 'catch block written', 'Error handling changed'],
+    invoke: 'Agent({\n  subagent_type: "silent-failure-hunter",\n  description: "Scan for silent failures in index.html"\n})',
+    glow: 'rgba(74,124,220,.7)'
+  },
+  {
+    id: 'planner',
+    name: 'Planner',
+    tier: 'opus',
+    icon: '🗺️',
+    desc: 'Phases complex index.html features into verifiable steps before writing code. Includes PARITY / REPAINT / XSS / PERF / SIZE risk flags.',
+    triggers: ['New feature > 3 functions', 'New panel or tab', 'Architectural refactor', 'Multi-file change'],
+    invoke: 'Agent({\n  subagent_type: "planner",\n  description: "Plan feature: [describe the feature]"\n})',
+    glow: 'rgba(0,196,160,.7)'
+  },
+  {
+    id: 'code-reviewer',
+    name: 'Code Reviewer',
+    tier: 'sonnet',
+    icon: '🔬',
+    desc: 'Confidence-based (80%+) general review. Checks XSS, silent catches, O(n) tick ops, bar caps (300/60), console.log. Outputs APPROVE / WARNING / BLOCK.',
+    triggers: ['After any non-trivial change', 'Before git commit', 'After refactor', 'New DOM rendering'],
+    invoke: 'Agent({\n  subagent_type: "code-reviewer",\n  description: "Review recent changes to index.html"\n})',
+    glow: 'rgba(74,124,220,.7)'
+  },
+  {
+    id: 'refactor-cleaner',
+    name: 'Refactor Cleaner',
+    tier: 'sonnet',
+    icon: '🧹',
+    desc: 'Finds dead functions, duplicate logic, and orphaned CSS in the monolithic index.html. Use in maintenance windows only — blocked during active dev.',
+    triggers: ['Maintenance window', 'index.html > 4400 lines', 'Visible code duplication', 'Unused CSS suspected'],
+    invoke: 'Agent({\n  subagent_type: "refactor-cleaner",\n  description: "Find dead code and duplication in index.html"\n})',
+    glow: 'rgba(245,166,35,.7)'
+  },
+  {
+    id: 'quant-analyst',
+    name: 'Quant Analyst',
+    tier: 'opus',
+    icon: '📈',
+    desc: 'Backtesting strategy analysis, Sharpe ratio, max drawdown, win rate attribution, and portfolio optimization for Order Flow trading strategies.',
+    triggers: ['Backtest results ready', 'New strategy added', 'Risk metrics review', 'Performance regression'],
+    invoke: 'Agent({\n  subagent_type: "quant-analyst",\n  description: "Analyze backtest performance and risk metrics"\n})',
+    glow: 'rgba(34,214,142,.7)'
+  },
+  {
+    id: 'team-lead',
+    name: 'Team Lead',
+    tier: 'opus',
+    icon: '🎯',
+    desc: 'Orchestrates 2-5 parallel subagents for complex multi-domain tasks. Enforces file-ownership boundaries. Synthesizes results with attribution.',
+    triggers: ['Task spans > 3 domains', 'Parallel independent work', 'Full-stack feature delivery', 'Multi-agent coordination needed'],
+    invoke: 'Agent({\n  subagent_type: "team-lead",\n  description: "Orchestrate: [describe the complex task]"\n})',
+    glow: 'rgba(255,140,66,.7)'
+  }
+];
+
+function renderAgents() {
+  const c = document.getElementById('rpContent');
+  if (!c) return;
+  c.innerHTML = `<div class="agent-hub">
+    <div class="agent-hub-hdr">
+      <span class="agent-hub-title">CLAUDE AGENTS</span>
+      <span class="agent-count-badge">${AGENTS_REGISTRY.length} LOADED</span>
+    </div>
+    <div class="agent-hint">
+      Spawn via Claude Code CLI with the <span>Agent()</span> tool.<br>
+      Click <span>COPY INVOKE</span> on any card to get the snippet.
+    </div>
+    ${AGENTS_REGISTRY.map(a => `
+    <div class="agent-card" style="--agent-glow:${a.glow}" id="agent-card-${a.id}">
+      <div class="agent-card-hdr">
+        <div class="agent-icon">${a.icon}</div>
+        <div class="agent-name">${esc(a.name)}</div>
+        <div class="agent-tier ${a.tier}">${a.tier.toUpperCase()}</div>
+      </div>
+      <div class="agent-desc">${esc(a.desc)}</div>
+      <div class="agent-triggers">
+        ${a.triggers.map(t => `<span class="agent-trigger-pill">${esc(t)}</span>`).join('')}
+      </div>
+      <div class="agent-foot">
+        <div class="agent-status">
+          <div class="agent-status-dot" id="agent-dot-${a.id}"></div>
+          <span id="agent-status-lbl-${a.id}">IDLE</span>
+        </div>
+        <button class="agent-copy-btn" id="agent-copy-${a.id}" onclick="copyAgentInvoke('${a.id}')">COPY INVOKE</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function copyAgentInvoke(agentId) {
+  const agent = AGENTS_REGISTRY.find(a => a.id === agentId);
+  if (!agent) return;
+  const btn = document.getElementById(`agent-copy-${agentId}`);
+  navigator.clipboard.writeText(agent.invoke).then(() => {
+    if (btn) { btn.textContent = '✓ COPIED'; btn.classList.add('copied'); }
+    showToast('agent', 'Invoke Copied', `${agent.name} — paste into Claude Code CLI.`);
+    setTimeout(() => { if (btn) { btn.textContent = 'COPY INVOKE'; btn.classList.remove('copied'); } }, 2000);
+  }).catch(() => { if (btn) btn.textContent = 'FAILED'; });
+}
+
+function setAgentRunning(agentId, running) {
+  const dot = document.getElementById(`agent-dot-${agentId}`);
+  const lbl = document.getElementById(`agent-status-lbl-${agentId}`);
+  const card = document.getElementById(`agent-card-${agentId}`);
+  if (dot) { dot.classList.toggle('running', running); }
+  if (lbl) lbl.textContent = running ? 'RUNNING' : 'IDLE';
+  if (card) card.style.borderColor = running ? 'rgba(34,214,142,.45)' : '';
+}
+
 </script>
+
+<!-- TOAST CONTAINER -->
+<div id="toastContainer"></div>
+
 </body>
 </html>

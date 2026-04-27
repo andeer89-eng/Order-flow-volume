@@ -192,28 +192,49 @@ All entry/exit signals must use `barstate.isconfirmed`. Never use `barstate.isla
 ## File Structure
 
 ```
-index.html                    # Monolithic dashboard (CSS + HTML + JS, ~3950 lines)
-order_flow_elite.pine         # TradingView Pine Script v6 indicator (285 lines)
-Makefile                      # Project automation (test, lint, serve)
-CODEBASE_ANALYSIS.md          # Detailed codebase analysis with findings
-REPOSITORY_PATTERN_ANALYSIS.md # Cross-repo pattern analysis and recommendations
-CLAUDE.md                     # This file — project context for Claude Code
-.gitignore                    # Git ignore rules
-index.html                     # Monolithic dashboard (CSS + HTML + JS, ~3950 lines)
+index.html                     # Monolithic dashboard (CSS + HTML + JS, ~4250 lines)
 order_flow_elite.pine          # TradingView Pine Script v6 indicator (285 lines)
+order_flow_overlay.pine        # TradingView overlay indicator — PDH/PDL, ORB, SSL, EMA Cloud (~300 lines)
 CLAUDE.md                      # This file — project context for Claude Code
 README.md                      # Human-facing documentation
+CODEBASE_ANALYSIS.md           # Detailed codebase analysis with findings
+REPOSITORY_PATTERN_ANALYSIS.md # Cross-repo pattern analysis and recommendations
 .gitignore                     # Git ignore rules
 .htmlhintrc                    # HTMLHint linting config
 .claude/
   settings.json                # Claude Code hooks and quality gates
+  agents/
+    trading-logic-reviewer.md  # Specialist agent: financial logic, Pine parity, XSS review
+  skills/
+    indicator-parity/          # Enforce JS ↔ Pine Script calculation parity
+    pine-script-update/        # Workflow for .pine edits + downloadIndicator() sync
+    data-validation/           # WebSocket + REST data boundary validation
+    security-check/            # XSS (esc()), CSP, no hardcoded secrets
+    websocket-debugging/       # 4-phase WS bug investigation framework
 .github/
   workflows/ci.yml             # CI pipeline (pine validation, secrets, lint, structure)
   PULL_REQUEST_TEMPLATE.md     # PR checklist
   ISSUE_TEMPLATE/              # Bug report and feature request templates
+deltalytix-integration/        # Deltalytix server-side files (Prisma schema, API routes, keygen)
 tests/
-  indicators.test.js           # Indicator & utility test suite (160 tests)
+  indicators.test.js           # Indicator & utility test suite (93 tests)
 ```
+
+---
+
+## Skills (Superpowers-style)
+
+Invoke these via the `Skill` tool in Claude Code. Each provides a mandatory workflow checklist for high-risk operations.
+
+| Skill | Invoke when… |
+|---|---|
+| `indicator-parity` | Changing any signal logic, RSI, EMA, CVD, divergence, or entry/exit conditions |
+| `pine-script-update` | Editing any `.pine` file or the download button |
+| `data-validation` | Writing or modifying WebSocket handlers or REST fetch callbacks |
+| `security-check` | Adding `innerHTML`, new external fetch targets, or `localStorage` reads |
+| `websocket-debugging` | Live dot stuck, bars not updating, ticker switch leaves stale data |
+
+**Specialist agent:** `trading-logic-reviewer` — use via the Agent tool to get a structured code review focused on financial logic accuracy, Pine parity, no-repaint rules, and XSS.
 
 ---
 
