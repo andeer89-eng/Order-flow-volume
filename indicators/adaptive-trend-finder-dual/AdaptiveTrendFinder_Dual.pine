@@ -1,0 +1,441 @@
+// © Julien_Eche (original) — dual-channel + editable-periods fork
+// Shows short-term and long-term Adaptive Trend Finder channels simultaneously
+// with user-editable candidate period lists for each channel.
+// GPL-3.0
+
+//@version=6
+indicator('Adaptive Trend Finder (log) — Dual', shorttitle = 'ATF Dual', overlay = true, max_bars_back = 5000)
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+confidence(float r) =>
+    switch
+        r < 0.20 => 'Extremely Weak'
+        r < 0.30 => 'Very Weak'
+        r < 0.40 => 'Weak'
+        r < 0.50 => 'Mostly Weak'
+        r < 0.60 => 'Somewhat Weak'
+        r < 0.70 => 'Moderately Weak'
+        r < 0.80 => 'Moderate'
+        r < 0.90 => 'Moderately Strong'
+        r < 0.92 => 'Mostly Strong'
+        r < 0.94 => 'Strong'
+        r < 0.96 => 'Very Strong'
+        r < 0.98 => 'Exceptionally Strong'
+        =>          'Ultra Strong'
+
+getTablePos(string pos) =>
+    switch pos
+        'Bottom Right'  => position.bottom_right
+        'Bottom Center' => position.bottom_center
+        'Bottom Left'   => position.bottom_left
+        'Top Right'     => position.top_right
+        'Top Left'      => position.top_left
+        'Top Center'    => position.top_center
+        'Middle Right'  => position.middle_right
+        =>                 position.middle_left
+
+getLineStyle(string s) =>
+    switch s
+        'Dotted' => line.style_dotted
+        'Dashed' => line.style_dashed
+        =>          line.style_solid
+
+getExtend(string s) =>
+    switch s
+        'Extend Right' => extend.right
+        'Extend Both'  => extend.both
+        'Extend None'  => extend.none
+        =>                extend.left
+
+getTextSize(string s) =>
+    switch s
+        'Large' => size.large
+        'Small' => size.small
+        =>         size.normal
+
+tfMultiplier() =>
+    timeframe.isweekly ? 52.0 :
+     timeframe.isdaily ? (syminfo.type == 'crypto' ? 365.0 : 252.0) :
+     1.0
+
+isValidTF() => timeframe.isdaily or timeframe.isweekly
+
+// =============================================================================
+// CSV PARSER — accepts "20, 30, 40, ..." style strings; clamps to [2, 5000]
+// =============================================================================
+parsePeriods(string csv) =>
+    array<int> result = array.new<int>()
+    if str.length(csv) > 0
+        array<string> parts = str.split(csv, ',')
+        if not na(parts)
+            for i = 0 to array.size(parts) - 1
+                string clean = str.replace_all(array.get(parts, i), ' ', '')
+                float n = str.tonumber(clean)
+                if not na(n) and n >= 2 and n <= 5000
+                    array.push(result, int(math.round(n)))
+    result
+
+// =============================================================================
+// REGRESSION CORE — operates on a pre-filled log buffer so all []-reads happen
+// at top level (avoiding Pine v6 loop+function+[] history-reference issues).
+// =============================================================================
+calcDev(array<float> buf, int length) =>
+    int bufSize = array.size(buf)
+    if length < 2 or length > bufSize or na(array.get(buf, length - 1))
+        [float(na), float(na), float(na), float(na)]
+    else
+        int   period_1 = length - 1
+        float sumX  = 0.0
+        float sumXX = 0.0
+        float sumYX = 0.0
+        float sumY  = 0.0
+        for int i = 1 to length
+            float lSrc = array.get(buf, i - 1)
+            sumX  += i
+            sumXX += i * i
+            sumYX += i * lSrc
+            sumY  += lSrc
+        float slope     = nz((length * sumYX - sumX * sumY) / (length * sumXX - sumX * sumX))
+        float average   = sumY / length
+        float intercept = average - slope * sumX / length + slope
+
+        float sumDev = 0.0
+        float sumDxx = 0.0
+        float sumDyy = 0.0
+        float sumDyx = 0.0
+        float regres = intercept + slope * period_1 * 0.5
+        float sumSlp = intercept
+        for int i = 0 to period_1
+            float lSrc  = array.get(buf, i)
+            float dxt   = lSrc - average
+            float dyt   = sumSlp - regres
+            float resid = lSrc - sumSlp
+            sumSlp += slope
+            sumDxx += dxt * dxt
+            sumDyy += dyt * dyt
+            sumDyx += dxt * dyt
+            sumDev += resid * resid
+
+        float unStdDev = math.sqrt(sumDev / period_1)
+        float divisor  = sumDxx * sumDyy
+        float pearsonR = nz(sumDyx / math.sqrt(divisor))
+        [unStdDev, pearsonR, slope, intercept]
+
+// =============================================================================
+// CHANNEL DRAWING — returns updated handles for caller to re-assign
+// =============================================================================
+drawChannel(int startAtBar, float startPrice, float endPrice, float devExp,
+            int lineWidth, string extStyle, string midStyle, string chnStyle,
+            color midColor, color chnColor, color fillColor,
+            line bL, line uL, line lL, linefill uF, linefill lF) =>
+    float upperStart = startPrice * devExp
+    float upperEnd   = endPrice   * devExp
+    float lowerStart = startPrice / devExp
+    float lowerEnd   = endPrice   / devExp
+
+    line     baseOut  = bL
+    line     upperOut = uL
+    line     lowerOut = lL
+    linefill ufOut    = uF
+    linefill lfOut    = lF
+
+    if na(baseOut)
+        baseOut  := line.new(startAtBar, startPrice, bar_index, endPrice,   width = lineWidth, extend = extStyle, color = midColor, style = midStyle)
+        upperOut := line.new(startAtBar, upperStart, bar_index, upperEnd,   width = 1,         extend = extStyle, color = chnColor, style = chnStyle)
+        lowerOut := line.new(startAtBar, lowerStart, bar_index, lowerEnd,   width = 1,         extend = extStyle, color = chnColor, style = chnStyle)
+        ufOut    := linefill.new(upperOut, baseOut, color = fillColor)
+        lfOut    := linefill.new(baseOut, lowerOut, color = fillColor)
+    else
+        line.set_xy1(baseOut,  startAtBar, startPrice)
+        line.set_xy2(baseOut,  bar_index,  endPrice)
+        line.set_xy1(upperOut, startAtBar, upperStart)
+        line.set_xy2(upperOut, bar_index,  upperEnd)
+        line.set_xy1(lowerOut, startAtBar, lowerStart)
+        line.set_xy2(lowerOut, bar_index,  lowerEnd)
+        line.set_color(upperOut, chnColor)
+        line.set_color(lowerOut, chnColor)
+        line.set_color(baseOut,  midColor)
+        linefill.set_color(ufOut, fillColor)
+        linefill.set_color(lfOut, fillColor)
+
+    [baseOut, upperOut, lowerOut, ufOut, lfOut]
+
+// =============================================================================
+// TABLE UPDATE
+// =============================================================================
+updateTable(table t, string tablePos, string periodLabel,
+            bool showPeriod, bool showStrength, bool showPearson, bool showCagr,
+            int detectedPeriod, float pearsonR, float slope,
+            color textColor, color statColor, string txtSz) =>
+    table tbl = t
+    if na(tbl)
+        tbl := table.new(tablePos, 1, 3)
+
+    if showPeriod
+        table.cell(tbl, 0, 0, periodLabel + str.tostring(detectedPeriod), text_color = textColor, text_size = txtSz)
+
+    if showStrength
+        string s = showPearson ?
+             'Pearson\'s R: ' + str.tostring(slope > 0.0 ? -pearsonR : pearsonR, '#.###') :
+             'Trend Strength: ' + confidence(pearsonR)
+        table.cell(tbl, 0, 1, s, text_color = statColor, text_size = txtSz)
+
+    if showCagr and isValidTF()
+        float cagr = na
+        if bar_index >= detectedPeriod
+            cagr := math.pow(close / close[detectedPeriod - 1], tfMultiplier() / detectedPeriod) - 1
+        string cagrText = not na(cagr) ? str.tostring(cagr * 100, '#.#') + '%' : 'N/A'
+        table.cell(tbl, 0, 2, 'Trend Annualized Return: ' + cagrText, text_color = statColor, text_size = txtSz)
+
+    tbl
+
+// =============================================================================
+// TOOLTIPS
+// =============================================================================
+string t2     = 'Length of the period auto-selected for this channel — the lookback with the strongest linear fit in log-space.'
+string t3     = 'Pearson\'s R measures the linear correlation between price and trend. Closer to 1 = stronger fit.'
+string t4     = 'Annualized return (CAGR) over the auto-selected period. Daily/Weekly timeframes only.'
+string tPer   = 'Comma-separated list of candidate lookback periods. Each will be tested for fit quality; the one with the highest Pearson\'s R is selected. Values must be 2–5000. You can use any number of entries — fewer = faster, more = denser sampling.'
+
+// =============================================================================
+// INPUTS
+// =============================================================================
+sourceInput = input.source(close, title = 'Source')
+
+// ---- DISPLAY ----
+string gD = 'DISPLAY'
+bool showShort = input.bool(true,  'Show Short-Term Channel', group = gD)
+bool showLong  = input.bool(false, 'Show Long-Term Channel',  group = gD)
+
+// ---- PERIOD CANDIDATES (EDITABLE) ----
+string gP = 'PERIOD CANDIDATES'
+string shortStr = input.string(
+     '20,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200',
+     'Short-Term Periods (CSV)', group = gP, tooltip = tPer)
+string longStr  = input.string(
+     '300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000,1050,1100,1150,1200',
+     'Long-Term Periods (CSV)',  group = gP, tooltip = tPer)
+
+// ---- SHORT-TERM CHANNEL ----
+string gSc = 'SHORT-TERM CHANNEL'
+float  devMult_S    = input.float(2.0, 'Deviation Multiplier', group = gSc, step = 0.1)
+color  chCol_S      = input.color(color.gray, 'Channel', group = gSc, inline = 'S1')
+string chStyle_S    = input.string('Solid', '', group = gSc, inline = 'S1', options = ['Solid', 'Dotted', 'Dashed'])
+string extend_S     = input.string('Extend Right', 'Extend', group = gSc, options = ['Extend Right', 'Extend Both', 'Extend None', 'Extend Left'])
+int    fillTrn_S    = input.int(93, 'Fill Transp', group = gSc, inline = 'S2', minval = 0, maxval = 100)
+int    lineTrn_S    = input.int(40, 'Line Transp', group = gSc, inline = 'S2', minval = 0, maxval = 100)
+color  midCol_S     = input.color(color.blue, 'Midline', group = gSc, inline = 'S3')
+int    midTrn_S     = input.int(100, 'Transp', group = gSc, inline = 'S3', minval = 0, maxval = 100)
+int    midWid_S     = input.int(1, 'Width', group = gSc, inline = 'S3')
+string midStyle_S   = input.string('Dashed', 'Midline Style', group = gSc, options = ['Dotted', 'Solid', 'Dashed'])
+
+// ---- LONG-TERM CHANNEL ----
+string gLc = 'LONG-TERM CHANNEL'
+float  devMult_L    = input.float(2.0, 'Deviation Multiplier', group = gLc, step = 0.1)
+color  chCol_L      = input.color(color.orange, 'Channel', group = gLc, inline = 'L1')
+string chStyle_L    = input.string('Solid', '', group = gLc, inline = 'L1', options = ['Solid', 'Dotted', 'Dashed'])
+string extend_L     = input.string('Extend Right', 'Extend', group = gLc, options = ['Extend Right', 'Extend Both', 'Extend None', 'Extend Left'])
+int    fillTrn_L    = input.int(93, 'Fill Transp', group = gLc, inline = 'L2', minval = 0, maxval = 100)
+int    lineTrn_L    = input.int(40, 'Line Transp', group = gLc, inline = 'L2', minval = 0, maxval = 100)
+color  midCol_L     = input.color(color.red, 'Midline', group = gLc, inline = 'L3')
+int    midTrn_L     = input.int(100, 'Transp', group = gLc, inline = 'L3', minval = 0, maxval = 100)
+int    midWid_L     = input.int(1, 'Width', group = gLc, inline = 'L3')
+string midStyle_L   = input.string('Dashed', 'Midline Style', group = gLc, options = ['Dotted', 'Solid', 'Dashed'])
+
+// ---- SHORT-TERM TABLE ----
+string gSt = 'SHORT-TERM TABLE'
+bool   tShowPer_S  = input(true,  'Show Auto-Selected Period', group = gSt, tooltip = t2)
+bool   tShowStr_S  = input(true,  'Show Trend Strength',       group = gSt, inline = 'ST')
+bool   tShowPer2_S = input.bool(false, "Show Pearson's R",     group = gSt, inline = 'ST', tooltip = t3)
+bool   tShowCgr_S  = input(true,  'Show Annualized Return',    group = gSt, tooltip = t4)
+string tPos_S      = input.string('Bottom Right', 'Position', group = gSt, inline = 'STp', options = ['Bottom Right', 'Bottom Left', 'Middle Right', 'Middle Left', 'Top Right', 'Top Left', 'Top Center', 'Bottom Center'])
+string tSize_S     = input.string('Normal', 'Text Size',      group = gSt, inline = 'STp', options = ['Normal', 'Large', 'Small'])
+
+// ---- LONG-TERM TABLE ----
+string gLt = 'LONG-TERM TABLE'
+bool   tShowPer_L  = input(true,  'Show Auto-Selected Period', group = gLt, tooltip = t2)
+bool   tShowStr_L  = input(true,  'Show Trend Strength',       group = gLt, inline = 'LT')
+bool   tShowPer2_L = input.bool(false, "Show Pearson's R",     group = gLt, inline = 'LT', tooltip = t3)
+bool   tShowCgr_L  = input(true,  'Show Annualized Return',    group = gLt, tooltip = t4)
+string tPos_L      = input.string('Bottom Left', 'Position',  group = gLt, inline = 'LTp', options = ['Bottom Right', 'Bottom Left', 'Middle Right', 'Middle Left', 'Top Right', 'Top Left', 'Top Center', 'Bottom Center'])
+string tSize_L     = input.string('Normal', 'Text Size',      group = gLt, inline = 'LTp', options = ['Normal', 'Large', 'Small'])
+
+// =============================================================================
+// PARSE PERIOD INPUTS
+// =============================================================================
+array<int> shortPeriods = parsePeriods(shortStr)
+array<int> longPeriods  = parsePeriods(longStr)
+
+// Compute max lookback we'll ever need across both lists
+int maxLookback = 0
+if showShort and array.size(shortPeriods) > 0
+    maxLookback := math.max(maxLookback, array.max(shortPeriods))
+if showLong and array.size(longPeriods) > 0
+    maxLookback := math.max(maxLookback, array.max(longPeriods))
+maxLookback := math.min(maxLookback, 5000)
+
+// =============================================================================
+// LOG SOURCE + HISTORICAL BUFFER
+// All []-reads happen here at top level — guaranteed reliable in Pine v6.
+// =============================================================================
+float logSource = math.log(sourceInput)
+
+var array<float> logBuf = array.new<float>()
+
+if barstate.islast and maxLookback > 0
+    array.clear(logBuf)
+    int fillCount = math.min(maxLookback, bar_index + 1)
+    for i = 0 to fillCount - 1
+        array.push(logBuf, logSource[i])
+
+// =============================================================================
+// PERSISTENT VAR HANDLES — separate sets for short and long
+// =============================================================================
+var line     baseLine_S = na
+var line     upperLine_S = na
+var line     lowerLine_S = na
+var linefill upperFill_S = na
+var linefill lowerFill_S = na
+var table    table_S = na
+
+var line     baseLine_L = na
+var line     upperLine_L = na
+var line     lowerLine_L = na
+var linefill upperFill_L = na
+var linefill lowerFill_L = na
+var table    table_L = na
+
+// =============================================================================
+// LAST-BAR DRAWING
+// =============================================================================
+if barstate.islast
+    // ---------------- SHORT-TERM ----------------
+    if showShort and array.size(shortPeriods) > 0
+        int nS = array.size(shortPeriods)
+        array<float> pearsS = array.new<float>(nS, na)
+        array<float> stdsS  = array.new<float>(nS, na)
+        array<float> slpsS  = array.new<float>(nS, na)
+        array<float> intsS  = array.new<float>(nS, na)
+        for i = 0 to nS - 1
+            [_s, _p, _sl, _ic] = calcDev(logBuf, array.get(shortPeriods, i))
+            array.set(stdsS, i, _s)
+            array.set(pearsS, i, _p)
+            array.set(slpsS, i, _sl)
+            array.set(intsS, i, _ic)
+
+        // Find best Pearson, skipping na's
+        float bestR_S = -1.0
+        int   bestIdx_S = -1
+        for i = 0 to nS - 1
+            float r = array.get(pearsS, i)
+            if not na(r) and r > bestR_S
+                bestR_S := r
+                bestIdx_S := i
+
+        if bestIdx_S >= 0
+            int   dPeriod_S = array.get(shortPeriods, bestIdx_S)
+            float dSlope_S  = array.get(slpsS, bestIdx_S)
+            float dIntcpt_S = array.get(intsS, bestIdx_S)
+            float dStdDev_S = array.get(stdsS, bestIdx_S)
+
+            float startPx_S = math.exp(dIntcpt_S + dSlope_S * (dPeriod_S - 1))
+            float endPx_S   = math.exp(dIntcpt_S)
+            int   startAt_S = bar_index - dPeriod_S + 1
+            float devExp_S  = math.exp(devMult_S * dStdDev_S)
+
+            color chnColor_S  = color.new(chCol_S, lineTrn_S)
+            color midColor_S  = color.new(midCol_S, midTrn_S)
+            color fillColor_S = color.new(chCol_S, fillTrn_S)
+            color textColor_S = color.new(chCol_S, 0)
+
+            [b_s, u_s, l_s, uf_s, lf_s] = drawChannel(
+                 startAt_S, startPx_S, endPx_S, devExp_S,
+                 midWid_S, getExtend(extend_S), getLineStyle(midStyle_S), getLineStyle(chStyle_S),
+                 midColor_S, chnColor_S, fillColor_S,
+                 baseLine_S, upperLine_S, lowerLine_S, upperFill_S, lowerFill_S)
+            baseLine_S  := b_s
+            upperLine_S := u_s
+            lowerLine_S := l_s
+            upperFill_S := uf_s
+            lowerFill_S := lf_s
+
+            table_S := updateTable(
+                 table_S, getTablePos(tPos_S), 'Auto-Selected Period (Short): ',
+                 tShowPer_S, tShowStr_S, tShowPer2_S, tShowCgr_S,
+                 dPeriod_S, bestR_S, dSlope_S,
+                 textColor_S, chCol_S, getTextSize(tSize_S))
+    else
+        if not na(baseLine_S)
+            line.delete(baseLine_S),  baseLine_S  := na
+            line.delete(upperLine_S), upperLine_S := na
+            line.delete(lowerLine_S), lowerLine_S := na
+            linefill.delete(upperFill_S), upperFill_S := na
+            linefill.delete(lowerFill_S), lowerFill_S := na
+        if not na(table_S)
+            table.delete(table_S), table_S := na
+
+    // ---------------- LONG-TERM ----------------
+    if showLong and array.size(longPeriods) > 0
+        int nL = array.size(longPeriods)
+        array<float> pearsL = array.new<float>(nL, na)
+        array<float> stdsL  = array.new<float>(nL, na)
+        array<float> slpsL  = array.new<float>(nL, na)
+        array<float> intsL  = array.new<float>(nL, na)
+        for i = 0 to nL - 1
+            [_s, _p, _sl, _ic] = calcDev(logBuf, array.get(longPeriods, i))
+            array.set(stdsL, i, _s)
+            array.set(pearsL, i, _p)
+            array.set(slpsL, i, _sl)
+            array.set(intsL, i, _ic)
+
+        float bestR_L = -1.0
+        int   bestIdx_L = -1
+        for i = 0 to nL - 1
+            float r = array.get(pearsL, i)
+            if not na(r) and r > bestR_L
+                bestR_L := r
+                bestIdx_L := i
+
+        if bestIdx_L >= 0
+            int   dPeriod_L = array.get(longPeriods, bestIdx_L)
+            float dSlope_L  = array.get(slpsL, bestIdx_L)
+            float dIntcpt_L = array.get(intsL, bestIdx_L)
+            float dStdDev_L = array.get(stdsL, bestIdx_L)
+
+            float startPx_L = math.exp(dIntcpt_L + dSlope_L * (dPeriod_L - 1))
+            float endPx_L   = math.exp(dIntcpt_L)
+            int   startAt_L = bar_index - dPeriod_L + 1
+            float devExp_L  = math.exp(devMult_L * dStdDev_L)
+
+            color chnColor_L  = color.new(chCol_L, lineTrn_L)
+            color midColor_L  = color.new(midCol_L, midTrn_L)
+            color fillColor_L = color.new(chCol_L, fillTrn_L)
+            color textColor_L = color.new(chCol_L, 0)
+
+            [b_l, u_l, l_l, uf_l, lf_l] = drawChannel(
+                 startAt_L, startPx_L, endPx_L, devExp_L,
+                 midWid_L, getExtend(extend_L), getLineStyle(midStyle_L), getLineStyle(chStyle_L),
+                 midColor_L, chnColor_L, fillColor_L,
+                 baseLine_L, upperLine_L, lowerLine_L, upperFill_L, lowerFill_L)
+            baseLine_L  := b_l
+            upperLine_L := u_l
+            lowerLine_L := l_l
+            upperFill_L := uf_l
+            lowerFill_L := lf_l
+
+            table_L := updateTable(
+                 table_L, getTablePos(tPos_L), 'Auto-Selected Period (Long): ',
+                 tShowPer_L, tShowStr_L, tShowPer2_L, tShowCgr_L,
+                 dPeriod_L, bestR_L, dSlope_L,
+                 textColor_L, chCol_L, getTextSize(tSize_L))
+    else
+        if not na(baseLine_L)
+            line.delete(baseLine_L),  baseLine_L  := na
+            line.delete(upperLine_L), upperLine_L := na
+            line.delete(lowerLine_L), lowerLine_L := na
+            linefill.delete(upperFill_L), upperFill_L := na
+            linefill.delete(lowerFill_L), lowerFill_L := na
+        if not na(table_L)
+            table.delete(table_L), table_L := na
